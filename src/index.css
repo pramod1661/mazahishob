@@ -1,0 +1,624 @@
+/* =========================================================
+   ADD EXPENSE MODAL
+   ========================================================= */
+
+.modal-overlay {
+  position: fixed;
+
+  inset: 0;
+
+  z-index: 999;
+
+  display: flex;
+
+  align-items: center;
+  justify-content: center;
+
+  padding: 20px;
+
+  background: rgba(7, 29, 58, 0.55);
+
+  backdrop-filter: blur(7px);
+
+  animation: modalFade 0.2s ease;
+}
+
+@keyframes modalFade {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+
+.expense-modal {
+  width: min(500px, 100%);
+
+  max-height: 92vh;
+
+  overflow-y: auto;
+
+  padding: 25px;
+
+  border-radius: 22px;
+
+  background: #ffffff;
+
+  border: 1px solid rgba(255,255,255,0.8);
+
+  box-shadow:
+    0 30px 80px rgba(7, 29, 58, 0.25);
+
+  animation: modalSlide 0.25s ease;
+}
+
+@keyframes modalSlide {
+  from {
+    opacity: 0;
+    transform: translateY(15px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+
+/* Modal Header */
+
+.modal-header {
+  display: flex;
+
+  justify-content: space-between;
+
+  align-items: flex-start;
+
+  margin-bottom: 22px;
+}
+
+.modal-eyebrow {
+  display: block;
+
+  color: #126bff;
+
+  font-size: 9px;
+
+  font-weight: 800;
+
+  letter-spacing: 1.5px;
+}
+
+.modal-header h3 {
+  margin: 5px 0 3px;
+
+  color: #10233f;
+
+  font-size: 23px;
+
+  letter-spacing: -0.5px;
+}
+
+.modal-header p {
+  margin: 0;
+
+  color: #7b899c;
+
+  font-size: 11px;
+}
+
+.modal-close {
+  width: 34px;
+  height: 34px;
+
+  border: 0;
+
+  border-radius: 10px;
+
+  background: #f3f6fa;
+
+  color: #667085;
+
+  font-size: 22px;
+
+  display: flex;
+
+  align-items: center;
+  justify-content: center;
+
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.modal-close:hover {
+  background: #fff0f0;
+
+  color: #d64545;
+
+  transform: rotate(5deg);
+}
+
+
+/* Amount */
+
+.amount-field {
+  margin-bottom: 20px;
+}
+
+.amount-field label,
+.form-group label {
+  display: block;
+
+  margin-bottom: 7px;
+
+  color: #344054;
+
+  font-size: 11px;
+
+  font-weight: 700;
+}
+
+.amount-input {
+  height: 62px;
+
+  display: flex;
+
+  align-items: center;
+
+  padding: 0 16px;
+
+  border: 1.5px solid #dfe7f1;
+
+  border-radius: 14px;
+
+  background: #f9fbfe;
+
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease;
+}
+
+.amount-input:focus-within {
+  background: #ffffff;
+
+  border-color: #126bff;
+
+  box-shadow:
+    0 0 0 4px rgba(18,107,255,0.09);
+}
+
+.amount-input span {
+  margin-right: 8px;
+
+  color: #126bff;
+
+  font-size: 25px;
+
+  font-weight: 800;
+}
+
+.amount-input input {
+  width: 100%;
+
+  border: 0;
+
+  outline: 0;
+
+  background: transparent;
+
+  color: #10233f;
+
+  font-size: 27px;
+
+  font-weight: 800;
+}
+
+.amount-input input::placeholder {
+  color: #b5bfcc;
+}
+
+
+/* Form */
+
+.form-group {
+  margin-bottom: 17px;
+}
+
+.form-group label span {
+  color: #98a2b3;
+
+  font-size: 9px;
+
+  font-weight: 500;
+}
+
+
+/* Category */
+
+.category-grid {
+  display: grid;
+
+  grid-template-columns:
+    repeat(4, 1fr);
+
+  gap: 7px;
+}
+
+.category-option {
+  min-height: 36px;
+
+  padding: 7px 5px;
+
+  border: 1px solid #e1e8f0;
+
+  border-radius: 9px;
+
+  background: #ffffff;
+
+  color: #667085;
+
+  font-size: 10px;
+
+  font-weight: 600;
+
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.category-option:hover {
+  transform: translateY(-1px);
+
+  border-color: rgba(18,107,255,0.35);
+
+  color: #126bff;
+}
+
+.category-option.selected {
+  border-color: #126bff;
+
+  color: #126bff;
+
+  background: #edf5ff;
+
+  box-shadow:
+    0 4px 10px rgba(18,107,255,0.08);
+}
+
+
+/* Two columns */
+
+.form-row {
+  display: grid;
+
+  grid-template-columns:
+    1fr 1fr;
+
+  gap: 12px;
+}
+
+
+/* Input */
+
+.form-input {
+  width: 100%;
+
+  height: 42px;
+
+  padding: 0 11px;
+
+  border: 1px solid #dfe7f1;
+
+  border-radius: 10px;
+
+  outline: none;
+
+  background: #f9fbfe;
+
+  color: #344054;
+
+  font-size: 11px;
+
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease;
+}
+
+.form-input:focus {
+  background: #ffffff;
+
+  border-color: #126bff;
+
+  box-shadow:
+    0 0 0 3px rgba(18,107,255,0.08);
+}
+
+
+/* Modal Buttons */
+
+.modal-actions {
+  display: grid;
+
+  grid-template-columns:
+    0.75fr 1.25fr;
+
+  gap: 10px;
+
+  margin-top: 22px;
+}
+
+.cancel-btn,
+.save-expense-btn {
+  height: 44px;
+
+  border-radius: 11px;
+
+  font-size: 12px;
+
+  font-weight: 700;
+
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.cancel-btn {
+  border: 1px solid #dfe7f1;
+
+  background: #ffffff;
+
+  color: #667085;
+}
+
+.cancel-btn:hover {
+  transform: translateY(-2px);
+
+  background: #f8fafc;
+}
+
+.save-expense-btn {
+  border: 0;
+
+  color: white;
+
+  background:
+    linear-gradient(
+      135deg,
+      #126bff,
+      #00a6c0
+    );
+
+  box-shadow:
+    0 8px 20px rgba(18,107,255,0.20);
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  gap: 8px;
+}
+
+.save-expense-btn:hover {
+  transform: translateY(-2px);
+
+  box-shadow:
+    0 12px 25px rgba(18,107,255,0.27);
+}
+
+.save-expense-btn span {
+  font-size: 16px;
+
+  transition:
+    transform 0.2s ease;
+}
+
+.save-expense-btn:hover span {
+  transform: translateX(4px);
+}
+
+
+/* =========================================================
+   TRANSACTIONS
+   ========================================================= */
+
+.transaction-count {
+  color: #7b899c !important;
+
+  font-size: 10px !important;
+
+  letter-spacing: 0 !important;
+
+  text-transform: none !important;
+}
+
+.transaction-list {
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 7px;
+}
+
+.transaction-item {
+  min-height: 62px;
+
+  display: flex;
+
+  align-items: center;
+
+  gap: 11px;
+
+  padding: 10px 12px;
+
+  border: 1px solid #e5ebf2;
+
+  border-radius: 13px;
+
+  background: #ffffff;
+
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.transaction-item:hover {
+  transform: translateY(-2px);
+
+  border-color: rgba(18,107,255,0.2);
+
+  box-shadow:
+    0 8px 20px rgba(16,35,63,0.06);
+}
+
+.transaction-icon {
+  width: 36px;
+  height: 36px;
+
+  flex: 0 0 36px;
+
+  display: flex;
+
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 10px;
+
+  color: #d64545;
+
+  background: #fff0f0;
+
+  font-size: 15px;
+
+  font-weight: 800;
+}
+
+.transaction-details {
+  min-width: 0;
+
+  flex: 1;
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 3px;
+}
+
+.transaction-details strong {
+  font-size: 12px;
+}
+
+.transaction-details span {
+  overflow: hidden;
+
+  color: #7b899c;
+
+  font-size: 9px;
+
+  text-overflow: ellipsis;
+
+  white-space: nowrap;
+}
+
+.transaction-right {
+  display: flex;
+
+  flex-direction: column;
+
+  align-items: flex-end;
+
+  gap: 3px;
+}
+
+.transaction-right strong {
+  color: #d64545;
+
+  font-size: 12px;
+}
+
+.transaction-right span {
+  color: #98a2b3;
+
+  font-size: 9px;
+}
+
+.delete-expense {
+  width: 27px;
+  height: 27px;
+
+  border: 0;
+
+  border-radius: 8px;
+
+  background: transparent;
+
+  color: #aab4c0;
+
+  font-size: 17px;
+
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
+}
+
+.delete-expense:hover {
+  background: #fff0f0;
+
+  color: #d64545;
+}
+
+
+/* =========================================================
+   MOBILE MODAL
+   ========================================================= */
+
+@media (max-width: 520px) {
+
+  .modal-overlay {
+    padding: 12px;
+  }
+
+  .expense-modal {
+    padding: 20px;
+
+    border-radius: 19px;
+  }
+
+  .modal-header h3 {
+    font-size: 21px;
+  }
+
+  .category-grid {
+    grid-template-columns:
+      repeat(3, 1fr);
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-actions {
+    grid-template-columns:
+      1fr 1.4fr;
+  }
+
+  .transaction-right {
+    margin-left: auto;
+  }
+
+  .delete-expense {
+    display: none;
+  }
+}
