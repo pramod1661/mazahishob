@@ -277,6 +277,7 @@ function App() {
   "",
     createdAt: x.created_at || x.createdAt,
   });
+  
 
   /* =========================
      CALCULATIONS
@@ -382,7 +383,66 @@ function App() {
     month: "long",
     year: "numeric",
   });
+const last6Months = useMemo(() => {
+  const result = [];
 
+  const selectedDate = new Date(
+    `${month}-01T00:00:00`
+  );
+
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(selectedDate);
+    d.setMonth(d.getMonth() - i);
+
+    const year = d.getFullYear();
+    const monthNumber = String(
+      d.getMonth() + 1
+    ).padStart(2, "0");
+
+    const monthKey =
+      `${year}-${monthNumber}`;
+
+    const income = incomes
+      .filter(
+        (x) =>
+          String(
+            x.date || ""
+          ).slice(0, 7) === monthKey
+      )
+      .reduce(
+        (sum, x) =>
+          sum + Number(x.amount || 0),
+        0
+      );
+
+    const expense = expenses
+      .filter(
+        (x) =>
+          String(
+            x.date || ""
+          ).slice(0, 7) === monthKey
+      )
+      .reduce(
+        (sum, x) =>
+          sum + Number(x.amount || 0),
+        0
+      );
+
+    result.push({
+      monthKey,
+      label: d.toLocaleString(
+        "en-IN",
+        { month: "short" }
+      ),
+      income,
+      expense,
+      savings:
+        income - expense,
+    });
+  }
+
+  return result;
+}, [month, incomes, expenses]);
   /* =========================
      EXPENSE
   ========================= */
@@ -978,11 +1038,9 @@ const newOutstanding =
       }
     }
 
-   const nextDate = loan.nextEmiDate
-  ? (
-      loan.nextEmiDate < getToday()
-        ? addMonth(loan.nextEmiDate)
-        : loan.nextEmiDate
+  const nextDate = loan.nextEmiDate
+  ? addMonth(
+      String(loan.nextEmiDate).slice(0, 10)
     )
   : null;
 
@@ -994,6 +1052,9 @@ const newOutstanding =
         loan_name: loan.loanName,
         amount: emi,
         paid_date: getToday(),
+        emi_due_date: String(
+  loan.nextEmiDate
+).slice(0, 10),
         
         
         principal_paid: principal,
@@ -1128,75 +1189,31 @@ if (!loan) {
       );
 
     /* -----------------------------------------
-    /* -----------------------------------------
-   2. CALCULATE NEXT EMI DATE
+/* -----------------------------------------
+   2. RESTORE DELETED EMI DUE DATE
 
-   Deleted EMI was already overdue.
-   Therefore, move Next EMI Date to the
-   next future monthly EMI date.
+   Deleted EMI must become Pending again
+   if its due date has already arrived.
 
    Example:
-   Due Date = 2026-08-05
-   Today    = 2026-08-16
-   Result   = 2026-09-05
+   EMI Due Date = 2026-08-16
+   EMI Paid     = 2026-08-17
+   Delete EMI
+   Result       = next_emi_date 2026-08-16
+   → EMI becomes Pending again
 ----------------------------------------- */
 
 let restoredNextEmiDate = null;
 
 if (restoredOutstanding > 0) {
-  const today = new Date();
-
-  const todayString =
-    `${today.getFullYear()}-${String(
-      today.getMonth() + 1
-    ).padStart(2, "0")}-${String(
-      today.getDate()
-    ).padStart(2, "0")}`;
-
-  let baseDate =
+  const baseDate =
     payment.emiDueDate ||
     loan.nextEmiDate ||
     null;
 
   if (baseDate) {
-    /* Keep only YYYY-MM-DD */
-    baseDate = String(baseDate).substring(
-      0,
-      10
-    );
-
-    let [year, month, day] =
-      baseDate.split("-").map(Number);
-
-    /* If EMI date is already today/past,
-       keep moving one month until it is
-       a FUTURE date. */
-
-    while (
-      `${year}-${String(month).padStart(
-        2,
-        "0"
-      )}-${String(day).padStart(
-        2,
-        "0"
-      )}` <= todayString
-    ) {
-      month++;
-
-      if (month > 12) {
-        month = 1;
-        year++;
-      }
-    }
-
     restoredNextEmiDate =
-      `${year}-${String(month).padStart(
-        2,
-        "0"
-      )}-${String(day).padStart(
-        2,
-        "0"
-      )}`;
+      String(baseDate).slice(0, 10);
   }
 }
     /* -----------------------------------------
@@ -1636,25 +1653,40 @@ const getPendingEmis = (loan) => {
     loan.nextEmiDate
   ).slice(0, 10);
 
+  const pending = [];
+
   /* -----------------------------------------
      CASE 1:
      Next EMI itself is overdue
   ----------------------------------------- */
 
   if (nextDate <= today) {
-    const pending = [];
-
     let dueDate = nextDate;
 
     while (dueDate <= today) {
       const alreadyPaid =
-        emiPayments.some(
-          (p) =>
-            p.loanId === loan.id &&
+        emiPayments.some((p) => {
+          const paymentLoanId =
             String(
-              p.emiDueDate || ""
-            ).slice(0, 10) === dueDate
-        );
+              p.loanId ??
+                p.loan_id ??
+                ""
+            );
+
+          const paymentDueDate =
+            String(
+              p.emiDueDate ??
+                p.emi_due_date ??
+                ""
+            ).slice(0, 10);
+
+          return (
+            paymentLoanId ===
+              String(loan.id) &&
+            paymentDueDate ===
+              String(dueDate).slice(0, 10)
+          );
+        });
 
       if (!alreadyPaid) {
         pending.push({
@@ -1671,44 +1703,6 @@ const getPendingEmis = (loan) => {
     }
 
     return pending;
-  }
-
-  /* -----------------------------------------
-     CASE 2:
-     Next EMI is future.
-
-     Check previous month's EMI.
-  ----------------------------------------- */
-
-  const previousEmiDate =
-    addMonth(nextDate, -1);
-
-  if (
-    previousEmiDate <= today
-  ) {
-    const alreadyPaid =
-      emiPayments.some(
-        (p) =>
-          p.loanId === loan.id &&
-          String(
-            p.emiDueDate || ""
-          ).slice(0, 10) ===
-            previousEmiDate
-      );
-
-    if (!alreadyPaid) {
-      return [
-        {
-          loanId: loan.id,
-          loanName: loan.loanName,
-          amount: Number(
-            loan.emi || 0
-          ),
-          dueDate:
-            previousEmiDate,
-        },
-      ];
-    }
   }
 
   return [];
@@ -2525,7 +2519,34 @@ const getPendingEmis = (loan) => {
                               {t.date}
                             </span>
                           </div>
-                        </div>
+                                                    <div className="transaction-actions">
+                            <button
+                              type="button"
+                              className="mini-btn"
+                              title="Edit"
+                              onClick={() =>
+                                t.type === "income"
+                                  ? openIncome(t)
+                                  : openExpense(t)
+                              }
+                            >
+                              ✎
+                            </button>
+
+                            <button
+                              type="button"
+                              className="delete-expense"
+                              title="Delete"
+                              onClick={() =>
+                                t.type === "income"
+                                  ? deleteIncome(t.id)
+                                  : deleteExpense(t.id)
+                              }
+                            >
+                              ×
+                            </button>
+                          </div>
+                          </div>
                       )
                     )}
                   </div>
@@ -2697,6 +2718,7 @@ const getPendingEmis = (loan) => {
                           <span>
                             {x.date}
                           </span>
+                          
                         </div>
 
                         <button
@@ -2952,7 +2974,7 @@ const getPendingEmis = (loan) => {
     {money(
       emiPayments
         .filter(
-          (p) => p.loanId === loan.id
+          (p) => String(p.loanId) === String(loan.id)
         )
         .reduce(
           (s, p) =>
@@ -3047,7 +3069,7 @@ const getPendingEmis = (loan) => {
     <div>
     Next EMI: {
   loan.nextEmiDate &&
-  loan.nextEmiDate < getToday()
+  loan.nextEmiDate <= getToday()
     ? addMonth(loan.nextEmiDate)
     : loan.nextEmiDate
 }
@@ -3246,180 +3268,240 @@ const getPendingEmis = (loan) => {
             </>
           )}
 
-          {activePage === "reports" && (
-            <>
-              <PageHead
-                eyebrow="INSIGHTS"
-                title="Reports"
-                text="Understand where your money is going"
-              />
+        {activePage === "reports" && (
+  <>
+    <PageHead
+      eyebrow="INSIGHTS"
+      title="Reports"
+      text="Simple view of your money"
+    />
 
-              <div className="month-report-head">
-                <input
-                  type="month"
-                  value={month}
-                  onChange={(e) =>
-                    setMonth(
-                      e.target.value
-                    )
-                  }
-                />
+    <div className="month-report-head">
+      <input
+        type="month"
+        value={month}
+        onChange={(e) =>
+          setMonth(e.target.value)
+        }
+      />
 
+      <strong>
+        {monthLabel}
+      </strong>
+    </div>
+
+    {/* =========================
+        THIS MONTH
+    ========================= */}
+
+    <div className="stats-row">
+      <Stat
+        label="Income"
+        value={money(
+          monthIncomeTotal
+        )}
+        note="Selected month"
+      />
+
+      <Stat
+        label="Expenses"
+        value={money(
+          monthExpenseTotal
+        )}
+        note="Selected month"
+      />
+
+      <Stat
+        label="Savings"
+        value={money(
+          monthSavings
+        )}
+        note="Income minus expenses"
+      />
+    </div>
+
+    {/* =========================
+    EXPENSE BY CATEGORY
+========================= */}
+
+<section className="report-card">
+  <div className="section-heading">
+    <div>
+      <span>BREAKDOWN</span>
+
+      <h3>
+        Expense Categories
+      </h3>
+    </div>
+  </div>
+
+  {categoryTotals.length ? (
+    <div className="expense-category-table-wrap">
+      <table className="expense-category-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Category</th>
+            <th>Amount</th>
+            <th>% of Total</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {categoryTotals.map((x, index) => {
+            const totalExpense = categoryTotals.reduce(
+              (sum, item) =>
+                sum + Number(item.amount || 0),
+              0
+            );
+
+            const percentage =
+              totalExpense > 0
+                ? (Number(x.amount || 0) /
+                    totalExpense) *
+                  100
+                : 0;
+
+            return (
+              <tr key={x.category}>
+                <td>
+                  <strong>{index + 1}</strong>
+                </td>
+
+                <td>
+                  <strong>{x.category}</strong>
+                </td>
+
+                <td className="expense-value">
+                  {money(x.amount)}
+                </td>
+
+                <td>
+                  <strong>
+                    {percentage.toFixed(1)}%
+                  </strong>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  ) : (
+    <p className="muted">
+      No expenses for this month.
+    </p>
+  )}
+</section>
+
+    {/* =========================
+        LAST 6 MONTHS
+    ========================= */}
+
+<section className="report-card">
+  <div className="section-heading">
+    <div>
+      <span>6 MONTHS</span>
+
+      <h3>
+        Financial Trend
+      </h3>
+    </div>
+  </div>
+
+  <div className="financial-trend-table-wrap">
+    <table className="financial-trend-table">
+      <thead>
+        <tr>
+          <th>Month</th>
+          <th>Income</th>
+          <th>Expense</th>
+          <th>Savings</th>
+          <th>Savings %</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {last6Months.map((x) => {
+          const savingsPercent =
+            Number(x.income) > 0
+              ? (Number(x.savings) / Number(x.income)) * 100
+              : 0;
+
+          return (
+            <tr key={x.monthKey}>
+              <td>
+                <strong>{x.label}</strong>
+              </td>
+
+              <td>
+                {money(x.income)}
+              </td>
+
+              <td>
+                {money(x.expense)}
+              </td>
+
+              <td>
                 <strong>
-                  {monthLabel}
+                  {money(x.savings)}
                 </strong>
-              </div>
+              </td>
 
-              <div className="stats-row">
-                <Stat
-                  label="Income"
-                  value={money(
-                    monthIncomeTotal
-                  )}
-                  note="Selected month"
-                />
+              <td>
+                <strong>
+                  {savingsPercent.toFixed(0)}%
+                </strong>
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  </div>
+</section>
 
-                <Stat
-                  label="Expenses"
-                  value={money(
-                    monthExpenseTotal
-                  )}
-                  note="Selected month"
-                />
+    {/* =========================
+        TOP 3 EXPENSES
+    ========================= */}
 
-                <Stat
-                  label="Savings"
-                  value={money(
-                    monthSavings
-                  )}
-                  note="Income minus expenses"
-                />
-              </div>
+    <section className="report-card">
+      <div className="section-heading">
+        <div>
+          <span>TOP SPENDING</span>
 
-              <section className="report-card">
-                <div className="section-heading">
-                  <div>
-                    <span>
-                      BREAKDOWN
-                    </span>
+          <h3>
+            Top 3 Expenses
+          </h3>
+        </div>
+      </div>
 
-                    <h3>
-                      Expense Categories
-                    </h3>
-                  </div>
-                </div>
+      {categoryTotals.length ? (
+        categoryTotals
+          .slice(0, 3)
+          .map((x, index) => (
+            <div
+              className="report-row"
+              key={x.category}
+            >
+              <strong>
+                {index + 1}.{" "}
+                {x.category}
+              </strong>
 
-                {categoryTotals.length ? (
-                  categoryTotals.map(
-                    (x) => (
-                      <div
-                        className="bar-row"
-                        key={
-                          x.category
-                        }
-                      >
-                        <div>
-                          <span>
-                            {
-                              x.category
-                            }
-                          </span>
-
-                          <strong>
-                            {money(
-                              x.amount
-                            )}
-                          </strong>
-                        </div>
-
-                        <div className="bar-track">
-                          <div
-                            className="bar-fill"
-                            style={{
-                              width: `${
-                                Math.min(
-                                  (x.amount /
-                                    Math.max(
-                                      categoryTotals[0]
-                                        .amount,
-                                      1
-                                    )) *
-                                    100,
-                                  100
-                                )
-                              }%`,
-                            }}
-                          />
-                        </div>
-                      </div>
-                    )
-                  )
-                ) : (
-                  <p className="muted">
-                    No expenses for
-                    this month.
-                  </p>
-                )}
-              </section>
-
-              <section className="report-card">
-                <div className="section-heading">
-                  <div>
-                    <span>
-                      LOAN SUMMARY
-                    </span>
-
-                    <h3>
-                      Debt Snapshot
-                    </h3>
-                  </div>
-                </div>
-
-                <div className="stats-row compact">
-                  <Stat
-                    label="Loans"
-                    value={String(
-                      loans.length
-                    )}
-                    note="Total accounts"
-                  />
-
-                  <Stat
-                    label="Outstanding"
-                    value={money(
-                      loans.reduce(
-                        (s, x) =>
-                          s +
-                          Number(
-                            x.outstanding ??
-                              x.amount ??
-                              0
-                          ),
-                        0
-                      )
-                    )}
-                    note="Current principal"
-                  />
-
-                  <Stat
-                    label="EMI / Month"
-                    value={money(
-                      loans.reduce(
-                        (s, x) =>
-                          s +
-                          Number(
-                            x.emi ||
-                              0
-                          ),
-                        0
-                      )
-                    )}
-                    note="Total monthly EMI"
-                  />
-                </div>
-              </section>
-            </>
-          )}
+              <strong>
+                {money(x.amount)}
+              </strong>
+            </div>
+          ))
+      ) : (
+        <p className="muted">
+          No expenses for this month.
+        </p>
+      )}
+    </section>
+  </>
+)}
 
           {activePage === "settings" && (
             <>
@@ -4298,84 +4380,7 @@ const getPendingEmis = (loan) => {
                 )}
               </div>
             )}
-
-{prepayForm.actualPrepayment !== undefined && (
-  <div
-    style={{
-      marginTop: "16px",
-      padding: "14px",
-      borderRadius: "12px",
-      background: "#f6f8fb",
-      border: "1px solid #e5e7eb",
-    }}
-  >
-    <strong>
-      💰 Actual Bank Prepayment
-    </strong>
-
-    <div style={{ marginTop: "12px" }}>
-      <Field label="Prepayment Amount">
-        <input
-          className="form-input"
-          type="number"
-          min="0"
-          value={
-            prepayForm.actualPrepayment
-          }
-          onChange={(e) =>
-            setPrepayForm((p) => ({
-              ...p,
-              actualPrepayment:
-                e.target.value,
-            }))
-          }
-          placeholder="Amount paid to bank"
-        />
-      </Field>
-    </div>
-
-    <div style={{ marginTop: "10px" }}>
-      <Field label="Payment Date">
-        <input
-          className="form-input"
-          type="date"
-          value={
-            prepayForm.prepaymentDate ||
-            getToday()
-          }
-          onChange={(e) =>
-            setPrepayForm((p) => ({
-              ...p,
-              prepaymentDate:
-                e.target.value,
-            }))
-          }
-        />
-      </Field>
-    </div>
-
-    <div style={{ marginTop: "10px" }}>
-      <Field label="Note">
-        <input
-          className="form-input"
-          type="text"
-          value={
-            prepayForm.prepaymentNote ||
-            ""
-          }
-          onChange={(e) =>
-            setPrepayForm((p) => ({
-              ...p,
-              prepaymentNote:
-                e.target.value,
-            }))
-          }
-          placeholder="Optional note"
-        />
-      </Field>
-    </div>
-  </div>
-)}
+            
 <div
   style={{
     marginTop: "16px",

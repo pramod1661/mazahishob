@@ -1814,3 +1814,256 @@ button {
     padding: 18px !important;
   }
 }
+.recent-section .delete-expense {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+/* =========================================================
+   6 MONTHS FINANCIAL TREND - EXCEL STYLE TABLE
+========================================================= */
+
+.financial-trend-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  margin-top: 16px;
+  border: 1px solid #d9dee7;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.financial-trend-table {
+  width: 100%;
+  min-width: 700px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 13px;
+}
+
+.financial-trend-table th,
+.financial-trend-table td {
+  border: 1px solid #d9dee7;
+  padding: 10px 12px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.financial-trend-table th {
+  background: #f3f5f8;
+  color: #333;
+  font-weight: 700;
+  text-align: center;
+}
+
+.financial-trend-table th:first-child,
+.financial-trend-table td:first-child {
+  text-align: left;
+  font-weight: 600;
+}
+
+.financial-trend-table tbody tr:nth-child(even) {
+  background: #fafbfc;
+}
+
+.financial-trend-table tbody tr:hover {
+  background: #f1f5f9;
+}
+
+.financial-trend-table .income-value {
+  color: #16803c;
+  font-weight: 600;
+}
+
+.financial-trend-table .expense-value {
+  color: #c62828;
+  font-weight: 600;
+}
+
+.financial-trend-table .saving-value {
+  color: #1565c0;
+  font-weight: 700;
+}
+
+.financial-trend-table tfoot td {
+  background: #eef1f5;
+  font-weight: 700;
+  border-top: 2px solid #b9c0ca;
+}
+
+/* Mobile */
+@media (max-width: 700px) {
+  .financial-trend-table {
+    min-width: 650px;
+    font-size: 12px;
+  }
+
+  .financial-trend-table th,
+  .financial-trend-table td {
+    padding: 8px 9px;
+  }
+}
+/* =========================================================
+   TOP SPENDING - EXCEL STYLE TABLE
+========================================================= */
+
+.top-spending-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  margin-top: 16px;
+  border: 1px solid #d9dee7;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.top-spending-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 13px;
+}
+
+.top-spending-table th,
+.top-spending-table td {
+  border: 1px solid #d9dee7;
+  padding: 10px 12px;
+  white-space: nowrap;
+}
+
+.top-spending-table th {
+  background: #f3f5f8;
+  color: #333;
+  font-weight: 700;
+  text-align: left;
+}
+
+.top-spending-table td {
+  text-align: right;
+}
+
+.top-spending-table th:first-child,
+.top-spending-table td:first-child {
+  width: 55%;
+  text-align: left;
+}
+
+.top-spending-table th:last-child,
+.top-spending-table td:last-child {
+  width: 45%;
+}
+
+.top-spending-table tbody tr:nth-child(even) {
+  background: #fafbfc;
+}
+
+.top-spending-table tbody tr:hover {
+  background: #f1f5f9;
+}
+
+.top-spending-table .expense-value {
+  color: #c62828;
+  font-weight: 700;
+}
+/* =========================================================
+   TOP 3 EXPENSES - EXCEL STYLE
+========================================================= */
+
+.report-card .report-row {
+  display: grid !important;
+  grid-template-columns: 55px 1fr 160px;
+  align-items: center;
+  min-height: 44px;
+  margin: 0 !important;
+  padding: 0 12px !important;
+  border: 1px solid #d9dee7 !important;
+  border-bottom: 0 !important;
+  border-radius: 0 !important;
+  background: #fff;
+}
+
+.report-card .report-row:last-of-type {
+  border-bottom: 1px solid #d9dee7 !important;
+}
+
+.report-card .report-row strong:first-child {
+  text-align: left;
+}
+
+.report-card .report-row strong:last-child {
+  text-align: right;
+  color: #c62828;
+}
+/* =========================================================
+   EXPENSE CATEGORIES - EXCEL STYLE
+========================================================= */
+
+.expense-category-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  margin-top: 16px;
+  border: 1px solid #d9dee7;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.expense-category-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 13px;
+}
+
+.expense-category-table th,
+.expense-category-table td {
+  border: 1px solid #d9dee7;
+  padding: 10px 12px;
+  white-space: nowrap;
+}
+
+.expense-category-table th {
+  background: #f3f5f8;
+  color: #333;
+  font-weight: 700;
+  text-align: center;
+}
+
+.expense-category-table td {
+  text-align: right;
+}
+
+.expense-category-table th:first-child,
+.expense-category-table td:first-child {
+  width: 55px;
+  text-align: center;
+}
+
+.expense-category-table th:nth-child(2),
+.expense-category-table td:nth-child(2) {
+  text-align: left;
+}
+
+.expense-category-table th:nth-child(3),
+.expense-category-table td:nth-child(3) {
+  text-align: right;
+}
+
+.expense-category-table th:nth-child(4),
+.expense-category-table td:nth-child(4) {
+  width: 120px;
+  text-align: right;
+}
+
+.expense-category-table tbody tr:nth-child(even) {
+  background: #fafbfc;
+}
+
+.expense-category-table tbody tr:hover {
+  background: #f1f5f9;
+}
+
+.expense-category-table .expense-value {
+  color: #c62828;
+  font-weight: 700;
+}
