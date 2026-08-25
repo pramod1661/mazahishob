@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 import { supabase } from "./lib/supabase";
+import mazaHishobLogo from "./assets/maza-hishob-logo.png";
 
 const categories = [
   "Food",
@@ -58,12 +59,28 @@ const money = (n) =>
 
 function App() {
   const [activePage, setActivePage] = useState("home");
+    const [session, setSession] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  const [authMode, setAuthMode] = useState("login");
+
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [confirmPassword, setConfirmPassword] =
+    useState("");
+
+  const [authError, setAuthError] = useState("");
+  const [authSaving, setAuthSaving] = useState(false);
+  const [showLegacyLogin, setShowLegacyLogin] = useState(false);
   const [month, setMonth] = useState(getMonthKey(getToday()));
 
   const [expenses, setExpenses] = useState([]);
   const [incomes, setIncomes] = useState([]);
   const [loans, setLoans] = useState([]);
   const [emiPayments, setEmiPayments] = useState([]);
+  const [prepaymentPayments, setPrepaymentPayments] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -74,9 +91,23 @@ function App() {
   const [search, setSearch] = useState("");
   const [filterCategory, setFilterCategory] = useState("All");
   const [filterMode, setFilterMode] = useState("All");
+  const [filterMonth, setFilterMonth] = useState("All");
+  const [filterDate, setFilterDate] = useState("");
 
   const [selectedLoan, setSelectedLoan] = useState(null);
   const [backupMessage, setBackupMessage] = useState("");
+  const [driveBusy, setDriveBusy] = useState(false);
+  const [driveConnected, setDriveConnected] = useState(false);
+  const [driveBackups, setDriveBackups] = useState([]);
+  const [selectedDriveBackupId, setSelectedDriveBackupId] = useState("");
+
+  const [sessionWarningOpen, setSessionWarningOpen] = useState(false);
+  const [sessionSecondsLeft, setSessionSecondsLeft] = useState(30);
+
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState("");
+  const [profilePhotoBusy, setProfilePhotoBusy] = useState(false);
+  const [profileMessage, setProfileMessage] = useState("");
 
   const [expenseForm, setExpenseForm] = useState({
     amount: "",
@@ -95,18 +126,53 @@ function App() {
   });
 
   const [loanForm, setLoanForm] = useState({
-    loanType: "Home Loan",
-    loanName: "",
-    lender: "",
-    amount: "",
-    outstanding: "",
-    interestRate: "",
-    emi: "",
-    tenure: "",
-    startDate: getToday(),
-    nextEmiDate: "",
-    note: "",
-  });
+
+  /* =========================
+     SECTION 1
+     LOAN HISTORY
+     ========================= */
+
+  loanName: "",
+
+  lender: "",
+
+  amount: "",
+
+  principalPaidTillDate: "",
+
+  interestPaidTillDate: "",
+
+  originalLoanStartDate: "",
+
+
+  /* =========================
+     SECTION 2
+     CURRENT LOAN STATUS
+     ========================= */
+
+  outstanding: "",
+
+  interestRate: "",
+
+  tenure: "",
+
+  emi: "",
+
+  nextEmiDate: "",
+
+  trackingDate: getToday(),
+
+
+  /* =========================
+     SECTION 3
+     ADDITIONAL INFORMATION
+     ========================= */
+
+  loanType: "Home Loan",
+
+  note: "",
+
+});
 
   const [prepayForm, setPrepayForm] = useState({
     outstanding: "",
@@ -118,73 +184,849 @@ function App() {
   });
 
   /* =========================
-     LOAD DATA FROM SUPABASE
-  ========================= */
+   LOAD DATA FROM SUPABASE
+========================= */
 
-  useEffect(() => {
-    loadAllData();
-  }, []);
+useEffect(() => {
+  let mounted = true;
 
-  const loadAllData = async () => {
-    setLoading(true);
+  // Clear legacy Drive flags from older builds so Drive never appears
+  // connected until the user explicitly connects it in this version.
+  sessionStorage.removeItem("mh_drive_connected");
+  sessionStorage.removeItem("mh_drive_connect_pending");
 
-    try {
-      const [
-        expensesResult,
-        incomesResult,
-        loansResult,
-        emiResult,
-      ] = await Promise.all([
-        supabase
-          .from("expenses")
-          .select("*")
-          .order("created_at", { ascending: false }),
+  const syncDriveConnectionState = (nextSession) => {
+    const pending =
+      sessionStorage.getItem("mh_drive_connect_pending_v2") === "1";
 
-        supabase
-          .from("incomes")
-          .select("*")
-          .order("created_at", { ascending: false }),
+    const explicitlyConnected =
+      sessionStorage.getItem("mh_drive_connected_v2") === "1";
 
-        supabase
-          .from("loans")
-          .select("*")
-          .order("created_at", { ascending: false }),
+    const hasDriveToken = Boolean(nextSession?.provider_token);
 
-        supabase
-          .from("emi_payments")
-          .select("*")
-          .order("created_at", { ascending: false }),
-      ]);
+    /*
+     * Google Drive is NEVER auto-connected just because the user
+     * signed in with Google. It becomes connected only after the
+     * user explicitly presses Connect Google Drive.
+     *
+     * Once connected, we keep that choice only for the current
+     * browser session. Disconnect / Sign Out clears it.
+     */
+    if (pending && hasDriveToken) {
+      sessionStorage.setItem("mh_drive_connected_v2", "1");
+      sessionStorage.removeItem("mh_drive_connect_pending_v2");
+      setDriveConnected(true);
+      setBackupMessage("Google Drive connected by you for this session.");
+      return;
+    }
 
-      if (expensesResult.error) throw expensesResult.error;
-      if (incomesResult.error) throw incomesResult.error;
-      if (loansResult.error) throw loansResult.error;
-      if (emiResult.error) throw emiResult.error;
+    if (explicitlyConnected && hasDriveToken) {
+      setDriveConnected(true);
+      return;
+    }
 
-      setExpenses(
-        (expensesResult.data || []).map(normalizeExpense)
-      );
+    if (!hasDriveToken) {
+      sessionStorage.removeItem("mh_drive_connected_v2");
+    }
 
-      setIncomes(
-        (incomesResult.data || []).map(normalizeIncome)
-      );
+    setDriveConnected(false);
+  };
 
-      setLoans(
-        (loansResult.data || []).map(normalizeLoan)
-      );
+  const initAuth = async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
 
-      setEmiPayments(
-        (emiResult.data || []).map(normalizeEmiPayment)
-      );
-    } catch (error) {
-      console.error("Supabase loading error:", error);
-      alert(
-        `Unable to load data from Supabase.\n\n${error.message || error}`
-      );
-    } finally {
-      setLoading(false);
+    if (mounted) {
+      setSession(session);
+      syncDriveConnectionState(session);
+      setAuthLoading(false);
     }
   };
+
+  initAuth();
+
+  const {
+    data: { subscription },
+  } = supabase.auth.onAuthStateChange(
+    (_event, nextSession) => {
+      console.log("AUTH EVENT:", _event);
+      console.log("AUTH SESSION:", nextSession);
+
+      if (mounted) {
+        setSession(nextSession);
+        syncDriveConnectionState(nextSession);
+        setAuthLoading(false);
+      }
+    }
+  );
+
+  return () => {
+    mounted = false;
+    subscription.unsubscribe();
+  };
+}, []);
+
+
+/* =========================
+   GOOGLE LOGIN + OPTIONAL DRIVE ACCESS
+========================= */
+
+const GOOGLE_DRIVE_SCOPE =
+  "https://www.googleapis.com/auth/drive.file";
+
+const handleGoogleLogin = async () => {
+  setAuthError("");
+  setAuthSaving(true);
+  setDriveConnected(false);
+  sessionStorage.removeItem("mh_drive_connect_pending_v2");
+  sessionStorage.removeItem("mh_drive_connected_v2");
+
+  try {
+    const redirectTo = `${window.location.origin}/`;
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo,
+        queryParams: {
+          prompt: "select_account",
+        },
+      },
+    });
+
+    if (error) throw error;
+  } catch (error) {
+    console.error("Google login error:", error);
+
+    setAuthError(
+      error?.message ||
+        "Unable to continue with Google. Please try again."
+    );
+
+    setAuthSaving(false);
+  }
+};
+
+const connectGoogleDrive = async () => {
+  setBackupMessage("");
+  setDriveBusy(true);
+
+  try {
+    if (!isGoogleAccount) {
+      throw new Error(
+        "Google Drive backup is available after signing in with Google."
+      );
+    }
+
+    sessionStorage.setItem("mh_drive_connect_pending_v2", "1");
+
+    const redirectTo = `${window.location.origin}/`;
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo,
+        scopes: GOOGLE_DRIVE_SCOPE,
+        queryParams: {
+          prompt: "consent",
+        },
+      },
+    });
+
+    if (error) throw error;
+  } catch (error) {
+    sessionStorage.removeItem("mh_drive_connect_pending_v2");
+    console.error("Google Drive connect error:", error);
+    setBackupMessage(
+      `Unable to connect Google Drive. ${
+        error?.message || error
+      }`
+    );
+    setDriveBusy(false);
+  }
+};
+
+const disconnectGoogleDrive = () => {
+  setDriveConnected(false);
+  setDriveBackups([]);
+  setSelectedDriveBackupId("");
+  sessionStorage.removeItem("mh_drive_connect_pending_v2");
+  sessionStorage.removeItem("mh_drive_connected_v2");
+  setBackupMessage(
+    "Google Drive disconnected from Maza Hishob for this session. Local backup remains available."
+  );
+};
+
+
+/* =========================
+   OPTIONAL PROFILE PHOTO
+   Stored in Supabase Storage.
+   Google profile photo is never imported automatically.
+========================= */
+
+const PROFILE_PHOTO_BUCKET = "profile-photos";
+const PROFILE_PHOTO_NAME = "avatar.webp";
+
+const getProfileDisplayName = () => {
+  const metadata = session?.user?.user_metadata || {};
+  const email = String(session?.user?.email || "");
+
+  return (
+    metadata.full_name ||
+    metadata.name ||
+    email.split("@")[0] ||
+    "My Account"
+  );
+};
+
+const isGoogleAccount = Boolean(
+  session?.user?.app_metadata?.provider === "google" ||
+    session?.user?.app_metadata?.providers?.includes?.("google")
+);
+
+const loadProfilePhoto = async () => {
+  if (!session?.user?.id) {
+    setProfilePhotoUrl("");
+    return;
+  }
+
+  try {
+    const userId = session.user.id;
+
+    const { data: files, error: listError } = await supabase.storage
+      .from(PROFILE_PHOTO_BUCKET)
+      .list(userId, {
+        limit: 10,
+        search: PROFILE_PHOTO_NAME,
+      });
+
+    if (listError) {
+      if (/bucket not found/i.test(String(listError.message || ""))) {
+        console.warn("Profile photo bucket is not configured yet.");
+      }
+      setProfilePhotoUrl("");
+      return;
+    }
+
+    const exists = (files || []).some(
+      (file) => file.name === PROFILE_PHOTO_NAME
+    );
+
+    if (!exists) {
+      setProfilePhotoUrl("");
+      return;
+    }
+
+    const { data, error } = await supabase.storage
+      .from(PROFILE_PHOTO_BUCKET)
+      .createSignedUrl(`${userId}/${PROFILE_PHOTO_NAME}`, 60 * 60);
+
+    if (error) throw error;
+
+    setProfilePhotoUrl(data?.signedUrl || "");
+  } catch (error) {
+    console.error("Profile photo load error:", error);
+    setProfilePhotoUrl("");
+  }
+};
+
+const compressProfilePhoto = (file) =>
+  new Promise((resolve, reject) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    image.onload = () => {
+      try {
+        const size = 256;
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+
+        if (!ctx) {
+          throw new Error("Image processing is not supported in this browser.");
+        }
+
+        canvas.width = size;
+        canvas.height = size;
+
+        const crop = Math.min(image.width, image.height);
+        const sx = Math.max((image.width - crop) / 2, 0);
+        const sy = Math.max((image.height - crop) / 2, 0);
+
+        ctx.drawImage(
+          image,
+          sx,
+          sy,
+          crop,
+          crop,
+          0,
+          0,
+          size,
+          size
+        );
+
+        canvas.toBlob(
+          (blob) => {
+            URL.revokeObjectURL(objectUrl);
+
+            if (!blob) {
+              reject(new Error("Unable to prepare profile photo."));
+              return;
+            }
+
+            resolve(blob);
+          },
+          "image/webp",
+          0.76
+        );
+      } catch (error) {
+        URL.revokeObjectURL(objectUrl);
+        reject(error);
+      }
+    };
+
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Unable to read this image file."));
+    };
+
+    image.src = objectUrl;
+  });
+
+const uploadProfilePhoto = async (event) => {
+  const file = event.target.files?.[0];
+  event.target.value = "";
+
+  if (!file) return;
+
+  if (!session?.user?.id) {
+    alert("Please login again.");
+    return;
+  }
+
+  if (!file.type.startsWith("image/")) {
+    setProfileMessage("Please choose an image file.");
+    return;
+  }
+
+  if (file.size > 5 * 1024 * 1024) {
+    setProfileMessage("Please choose an image smaller than 5 MB.");
+    return;
+  }
+
+  try {
+    setProfilePhotoBusy(true);
+    setProfileMessage("Preparing photo...");
+
+    const blob = await compressProfilePhoto(file);
+    const path = `${session.user.id}/${PROFILE_PHOTO_NAME}`;
+
+    const { error } = await supabase.storage
+      .from(PROFILE_PHOTO_BUCKET)
+      .upload(path, blob, {
+        contentType: "image/webp",
+        upsert: true,
+        cacheControl: "3600",
+      });
+
+    if (error) throw error;
+
+    await loadProfilePhoto();
+    setProfileMessage("Profile photo updated.");
+  } catch (error) {
+    console.error("Profile photo upload error:", error);
+    setProfileMessage(
+      `Unable to upload photo. ${error?.message || error}`
+    );
+  } finally {
+    setProfilePhotoBusy(false);
+  }
+};
+
+const removeProfilePhoto = async () => {
+  if (!session?.user?.id || !profilePhotoUrl) return;
+
+  if (!window.confirm("Remove your profile photo?")) return;
+
+  try {
+    setProfilePhotoBusy(true);
+    setProfileMessage("");
+
+    const path = `${session.user.id}/${PROFILE_PHOTO_NAME}`;
+
+    const { error } = await supabase.storage
+      .from(PROFILE_PHOTO_BUCKET)
+      .remove([path]);
+
+    if (error) throw error;
+
+    setProfilePhotoUrl("");
+    setProfileMessage("Profile photo removed.");
+  } catch (error) {
+    console.error("Profile photo remove error:", error);
+    setProfileMessage(
+      `Unable to remove photo. ${error?.message || error}`
+    );
+  } finally {
+    setProfilePhotoBusy(false);
+  }
+};
+
+useEffect(() => {
+  if (!session?.user?.id) {
+    setProfilePhotoUrl("");
+    setProfileMenuOpen(false);
+    setProfileMessage("");
+    return;
+  }
+
+  loadProfilePhoto();
+}, [session?.user?.id]);
+
+
+/* =========================
+   LOGIN
+========================= */
+
+const handleLogin = async (e) => {
+  e.preventDefault();
+
+  setAuthError("");
+
+  if (!username.trim() || !password) {
+    setAuthError(
+      "Please enter username and password."
+    );
+    return;
+  }
+
+  setAuthSaving(true);
+
+  try {
+    const authEmail =
+      `${username.trim().toLowerCase()}@mazahishob.local`;
+
+    const { error } =
+      await supabase.auth.signInWithPassword({
+        email: authEmail,
+        password,
+      });
+
+    if (error) {
+      throw error;
+    }
+
+    setUsername("");
+    setPassword("");
+    setConfirmPassword("");
+  } catch (error) {
+    console.error("Login error:", error);
+
+    setAuthError(
+      error.message ||
+        "Unable to login."
+    );
+  } finally {
+    setAuthSaving(false);
+  }
+};
+
+
+/* =========================
+   CREATE USER
+========================= */
+
+const handleCreateUser = async (e) => {
+  e.preventDefault();
+
+  setAuthError("");
+
+  const cleanUsername =
+    username.trim().toLowerCase();
+
+  if (!cleanUsername || !password) {
+    setAuthError(
+      "Username and password are required."
+    );
+    return;
+  }
+
+  if (password.length < 6) {
+    setAuthError(
+      "Password must be at least 6 characters."
+    );
+    return;
+  }
+
+  if (password !== confirmPassword) {
+    setAuthError(
+      "Passwords do not match."
+    );
+    return;
+  }
+
+  setAuthSaving(true);
+
+  try {
+    const authEmail =
+      `${cleanUsername}@mazahishob.local`;
+
+    const {
+      data,
+      error,
+    } = await supabase.auth.signUp({
+      email: authEmail,
+      password,
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    if (!data.user) {
+      throw new Error(
+        "Unable to create user."
+      );
+    }
+
+    const {
+      error: profileError,
+    } = await supabase
+      .from("profiles")
+      .insert({
+        id: data.user.id,
+        username: cleanUsername,
+      });
+
+    if (profileError) {
+      throw profileError;
+    }
+
+    /*
+      Sign out immediately after account creation.
+      This prevents the newly created user from
+      going directly to the dashboard.
+    */
+    await supabase.auth.signOut();
+
+    setSession(null);
+
+    setUsername("");
+    setPassword("");
+    setConfirmPassword("");
+
+    setLoading(false);
+    setAuthMode("login");
+
+    alert(
+      "User created successfully. Please login."
+    );
+  } catch (error) {
+    console.error(
+      "Create user error:",
+      error
+    );
+
+    setAuthError(
+      error.message ||
+        "Unable to create user."
+    );
+  } finally {
+    setAuthSaving(false);
+  }
+};
+
+
+/* =========================
+   LOGOUT
+========================= */
+
+const clearSignedInState = () => {
+  setSession(null);
+  setExpenses([]);
+  setIncomes([]);
+  setLoans([]);
+  setEmiPayments([]);
+  setPrepaymentPayments([]);
+  setProfileMenuOpen(false);
+  setProfilePhotoUrl("");
+  setProfileMessage("");
+  setDriveConnected(false);
+  setDriveBackups([]);
+  setSelectedDriveBackupId("");
+  setSessionWarningOpen(false);
+  setSessionSecondsLeft(30);
+  sessionStorage.removeItem("mh_drive_connect_pending_v2");
+  sessionStorage.removeItem("mh_drive_connected_v2");
+  setActivePage("home");
+  setLoading(false);
+};
+
+const handleLogout = async () => {
+  try {
+    await supabase.auth.signOut();
+    clearSignedInState();
+  } catch (error) {
+    console.error("Logout error:", error);
+  }
+};
+
+/* =========================
+   5-MINUTE INACTIVITY AUTO LOGOUT
+   Warning starts after 4m 30s.
+========================= */
+
+useEffect(() => {
+  if (!session?.user?.id) return undefined;
+
+  const WARNING_AFTER_MS = 4.5 * 60 * 1000;
+  const LOGOUT_AFTER_MS = 5 * 60 * 1000;
+
+  let warningTimer;
+  let logoutTimer;
+  let countdownTimer;
+
+  const clearTimers = () => {
+    clearTimeout(warningTimer);
+    clearTimeout(logoutTimer);
+    clearInterval(countdownTimer);
+  };
+
+  const autoLogout = async () => {
+    clearTimers();
+
+    try {
+      await supabase.auth.signOut();
+    } finally {
+      clearSignedInState();
+      setAuthError(
+        "You were signed out after 5 minutes of inactivity. Sign in again to continue."
+      );
+    }
+  };
+
+  const showWarning = () => {
+    setSessionSecondsLeft(30);
+    setSessionWarningOpen(true);
+
+    countdownTimer = window.setInterval(() => {
+      setSessionSecondsLeft((current) => Math.max(current - 1, 0));
+    }, 1000);
+  };
+
+  const resetInactivityTimer = () => {
+    clearTimers();
+    setSessionWarningOpen(false);
+    setSessionSecondsLeft(30);
+
+    warningTimer = window.setTimeout(
+      showWarning,
+      WARNING_AFTER_MS
+    );
+
+    logoutTimer = window.setTimeout(
+      autoLogout,
+      LOGOUT_AFTER_MS
+    );
+  };
+
+  const activityEvents = [
+    "pointerdown",
+    "keydown",
+    "touchstart",
+    "scroll",
+  ];
+
+  const onActivity = () => resetInactivityTimer();
+
+  activityEvents.forEach((eventName) => {
+    window.addEventListener(eventName, onActivity, { passive: true });
+  });
+
+  window.__mhStaySignedIn = resetInactivityTimer;
+  resetInactivityTimer();
+
+  return () => {
+    clearTimers();
+    activityEvents.forEach((eventName) => {
+      window.removeEventListener(eventName, onActivity);
+    });
+    delete window.__mhStaySignedIn;
+  };
+}, [session?.user?.id]);
+
+
+/* =========================
+   LOAD ALL DATA
+========================= */
+
+const loadAllData = async (retryAttempt = 0) => {
+  if (!session?.user?.id) {
+    console.log("LOAD DATA SKIPPED: No logged-in user");
+    return;
+  }
+
+  console.log(
+    "LOAD DATA START - USER:",
+    session.user.id
+  );
+
+  setLoading(true);
+
+  try {
+    const userId = session.user.id;
+
+    const [
+      expensesResult,
+      incomesResult,
+      loansResult,
+      emiResult,
+      prepaymentResult,
+    ] = await Promise.all([
+      supabase
+        .from("expenses")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", {
+          ascending: false,
+        }),
+
+      supabase
+        .from("incomes")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", {
+          ascending: false,
+        }),
+
+      supabase
+        .from("loans")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", {
+          ascending: false,
+        }),
+
+      supabase
+        .from("emi_payments")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", {
+          ascending: false,
+        }),
+
+      supabase
+        .from("prepayment_payments")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", {
+          ascending: false,
+        }),
+    ]);
+
+    if (expensesResult.error) throw expensesResult.error;
+    if (incomesResult.error) throw incomesResult.error;
+    if (loansResult.error) throw loansResult.error;
+    if (emiResult.error) throw emiResult.error;
+    if (prepaymentResult.error) throw prepaymentResult.error;
+
+    setExpenses(
+      (expensesResult.data || []).map(
+        normalizeExpense
+      )
+    );
+
+    setIncomes(
+      (incomesResult.data || []).map(
+        normalizeIncome
+      )
+    );
+
+    setLoans(
+      (loansResult.data || []).map(
+        normalizeLoan
+      )
+    );
+
+    setEmiPayments(
+      (emiResult.data || []).map(
+        normalizeEmiPayment
+      )
+    );
+
+    setPrepaymentPayments(
+      (prepaymentResult.data || []).map(
+        normalizePrepaymentPayment
+      )
+    );
+
+    console.log(
+      "USER DATA LOADED SUCCESSFULLY"
+    );
+  } catch (error) {
+    console.error(
+      "Supabase loading error:",
+      error
+    );
+
+    const message = String(
+      error?.message || error || ""
+    );
+
+    const jwtIssuedInFuture =
+      /jwt\s+issued\s+at\s+future|issued\s+at\s+future/i.test(
+        message
+      );
+
+    /*
+      Supabase can occasionally return a temporary
+      clock-skew error immediately after OAuth login.
+      Wait briefly and retry before showing an error.
+    */
+    if (
+      jwtIssuedInFuture &&
+      retryAttempt < 2
+    ) {
+      const waitMs =
+        retryAttempt === 0 ? 3000 : 5000;
+
+      console.warn(
+        `JWT clock-skew detected. Retrying in ${waitMs}ms...`
+      );
+
+      await new Promise((resolve) =>
+        setTimeout(resolve, waitMs)
+      );
+
+      return loadAllData(
+        retryAttempt + 1
+      );
+    }
+
+    alert(
+      `Unable to load data from Supabase.\n\n${
+        jwtIssuedInFuture
+          ? "Temporary authentication clock mismatch. Please wait a few seconds and refresh the page."
+          : message
+      }`
+    );
+  } finally {
+    setLoading(false);
+  }
+};
+
+/* =========================
+   LOAD DATA AFTER LOGIN
+========================= */
+
+useEffect(() => {
+  if (!session) {
+    setLoading(false);
+    return;
+  }
+
+  loadAllData();
+}, [session]);
 
   /* =========================
      NORMALIZERS
@@ -218,25 +1060,35 @@ function App() {
   const normalizeLoan = (x) => ({
     ...x,
     id: x.id,
+
+    /* Historical / reference fields — never used as current EMI inputs */
     loanType: x.loan_type || x.loanType || "Other Loan",
     loanName: x.loan_name || x.loanName || "",
     lender: x.lender || "",
-    amount: Number(x.amount || 0),
+    amount: Number(x.amount ?? x.principal_amount ?? 0),
+    principalPaidTillDate: Number(
+      x.principal_paid_till_date ?? x.principalPaidTillDate ?? 0
+    ),
+    interestPaidTillDate: Number(
+      x.interest_paid_till_date ?? x.interestPaidTillDate ?? 0
+    ),
+    originalLoanStartDate:
+      x.start_date || x.originalLoanStartDate || x.startDate || "",
+
+    /* Current loan inputs — all EMI calculations use these values */
     outstanding: Number(
-      x.outstanding ?? x.amount ?? 0
+      x.outstanding ?? x.outstanding_principal ?? 0
     ),
     interestRate: Number(
       x.interest_rate ?? x.interestRate ?? 0
     ),
-    emi: Number(x.emi || 0),
+    emi: Number(x.emi ?? x.emi_amount ?? 0),
     tenure: Number(
-      x.tenure ?? x.remaining_tenure ?? 0
+      x.tenure ?? x.remaining_tenure ?? x.tenure_months ?? 0
     ),
-    startDate: x.start_date || x.startDate || "",
-    nextEmiDate:
-      x.next_emi_date ||
-      x.nextEmiDate ||
-      "",
+    nextEmiDate: x.next_emi_date || x.nextEmiDate || "",
+    trackingDate: x.tracking_date || x.trackingDate || "",
+
     note: x.note || "",
     status: x.status || "Active",
     createdAt: x.created_at || x.createdAt,
@@ -278,6 +1130,28 @@ function App() {
     createdAt: x.created_at || x.createdAt,
   });
   
+
+  const normalizePrepaymentPayment = (x) => ({
+    ...x,
+    id: x.id,
+    loanId: x.loan_id || x.loanId,
+    loanName: x.loan_name || x.loanName || "",
+    amount: Number(x.amount || 0),
+    paidDate: x.paid_date || x.paidDate || getToday(),
+    strategy: x.strategy || "tenure",
+    oldOutstanding: Number(x.old_outstanding ?? x.oldOutstanding ?? 0),
+    newOutstanding: Number(x.new_outstanding ?? x.newOutstanding ?? 0),
+    oldEmi: Number(x.old_emi ?? x.oldEmi ?? 0),
+    newEmi: Number(x.new_emi ?? x.newEmi ?? 0),
+    oldTenure: Number(x.old_tenure ?? x.oldTenure ?? 0),
+    newTenure: Number(x.new_tenure ?? x.newTenure ?? 0),
+    oldNextEmiDate: x.old_next_emi_date || x.oldNextEmiDate || "",
+    newNextEmiDate: x.new_next_emi_date || x.newNextEmiDate || "",
+    oldStatus: x.old_status || x.oldStatus || "Active",
+    newStatus: x.new_status || x.newStatus || "Active",
+    note: x.note || "",
+    createdAt: x.created_at || x.createdAt || "",
+  });
 
   /* =========================
      CALCULATIONS
@@ -325,31 +1199,81 @@ function App() {
   const monthSavings =
     monthIncomeTotal - monthExpenseTotal;
 
+  const trackedPrincipalPaid = useMemo(
+    () =>
+      emiPayments.reduce(
+        (sum, payment) => sum + Number(payment.principalPaid || 0),
+        0
+      ) +
+      prepaymentPayments.reduce(
+        (sum, payment) => sum + Number(payment.amount || 0),
+        0
+      ),
+    [emiPayments, prepaymentPayments]
+  );
+
+  const trackedInterestPaid = useMemo(
+    () =>
+      emiPayments.reduce(
+        (sum, payment) => sum + Number(payment.interestPaid || 0),
+        0
+      ),
+    [emiPayments]
+  );
+
+  const historicalPrincipalPaid = useMemo(
+    () =>
+      loans.reduce(
+        (sum, loan) => sum + Number(loan.principalPaidTillDate || 0),
+        0
+      ),
+    [loans]
+  );
+
+  const historicalInterestPaid = useMemo(
+    () =>
+      loans.reduce(
+        (sum, loan) => sum + Number(loan.interestPaidTillDate || 0),
+        0
+      ),
+    [loans]
+  );
+
   const filteredExpenses = useMemo(() => {
     const q = search.trim().toLowerCase();
 
     return expenses.filter((x) => {
+      const expenseDate = String(x.date || "").slice(0, 10);
+      const expenseMonth = expenseDate.slice(0, 7);
+
       const matchesSearch =
         !q ||
-        String(x.category)
-          .toLowerCase()
-          .includes(q) ||
-        String(x.note || "")
-          .toLowerCase()
-          .includes(q);
+        String(x.category || "").toLowerCase().includes(q) ||
+        String(x.note || "").toLowerCase().includes(q) ||
+        String(x.paymentMode || "").toLowerCase().includes(q) ||
+        expenseDate.toLowerCase().includes(q) ||
+        String(x.amount || "").toLowerCase().includes(q);
 
       const matchesCategory =
         filterCategory === "All" ||
-        x.category === filterCategory;
+        String(x.category || "") === String(filterCategory);
 
       const matchesMode =
         filterMode === "All" ||
-        x.paymentMode === filterMode;
+        String(x.paymentMode || "") === String(filterMode);
+
+      const matchesMonth =
+        filterMonth === "All" || expenseMonth === filterMonth;
+
+      const matchesDate =
+        !filterDate || expenseDate === filterDate;
 
       return (
         matchesSearch &&
         matchesCategory &&
-        matchesMode
+        matchesMode &&
+        matchesMonth &&
+        matchesDate
       );
     });
   }, [
@@ -357,6 +1281,8 @@ function App() {
     search,
     filterCategory,
     filterMode,
+    filterMonth,
+    filterDate,
   ]);
 
   const categoryTotals = useMemo(() => {
@@ -473,84 +1399,106 @@ const last6Months = useMemo(() => {
   };
 
   const saveExpense = async (e) => {
-    e.preventDefault();
+  e.preventDefault();
 
-    if (
-      !expenseForm.amount ||
-      Number(expenseForm.amount) <= 0
-    ) {
-      alert("Please enter a valid amount.");
-      return;
-    }
+  if (
+    !expenseForm.amount ||
+    Number(expenseForm.amount) <= 0
+  ) {
+    alert("Please enter a valid amount.");
+    return;
+  }
 
-    setSaving(true);
+  if (!session?.user?.id) {
+    alert("Please login again.");
+    return;
+  }
 
-    try {
-      const payload = {
-        amount: Number(expenseForm.amount),
-        category: expenseForm.category,
-        date: expenseForm.date,
-        payment_mode:
-          expenseForm.paymentMode,
-        note: expenseForm.note || "",
-      };
+  setSaving(true);
 
-      if (editing) {
-        const { data, error } =
-          await supabase
-            .from("expenses")
-            .update(payload)
-            .eq("id", editing.id)
-            .select()
-            .single();
+  try {
+    const userId = session.user.id;
 
-        if (error) throw error;
+    const payload = {
+      user_id: userId,
+      amount: Number(expenseForm.amount),
+      category: expenseForm.category,
+      date: expenseForm.date,
+      payment_mode: expenseForm.paymentMode,
+      note: expenseForm.note || "",
+    };
 
-        setExpenses((prev) =>
-          prev.map((x) =>
-            x.id === editing.id
-              ? normalizeExpense(data)
-              : x
-          )
-        );
-      } else {
-        const { data, error } =
-          await supabase
-            .from("expenses")
-            .insert(payload)
-            .select()
-            .single();
+    if (editing) {
+      const { data, error } = await supabase
+        .from("expenses")
+        .update({
+          amount: Number(expenseForm.amount),
+          category: expenseForm.category,
+          date: expenseForm.date,
+          payment_mode: expenseForm.paymentMode,
+          note: expenseForm.note || "",
+        })
+        .eq("id", editing.id)
+        .eq("user_id", userId)
+        .select()
+        .single();
 
-        if (error) throw error;
+      if (error) throw error;
 
-        setExpenses((prev) => [
-          normalizeExpense(data),
-          ...prev,
-        ]);
-      }
-
-      closeModal();
-    } catch (error) {
-      console.error(error);
-      alert(
-        `Unable to save expense.\n\n${
-          error.message || error
-        }`
+      setExpenses((prev) =>
+        prev.map((x) =>
+          x.id === editing.id
+            ? normalizeExpense(data)
+            : x
+        )
       );
-    } finally {
-      setSaving(false);
+    } else {
+      const { data, error } = await supabase
+        .from("expenses")
+        .insert(payload)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setExpenses((prev) => [
+        normalizeExpense(data),
+        ...prev,
+      ]);
     }
-  };
+
+    closeModal();
+  } catch (error) {
+    console.error(
+      "Expense save error:",
+      error
+    );
+
+    alert(
+      `Unable to save expense.\n\n${
+        error.message || error
+      }`
+    );
+  } finally {
+    setSaving(false);
+  }
+};
 
   const deleteExpense = async (id) => {
     if (!window.confirm("Delete this expense?"))
       return;
 
     try {
+      if (!session?.user?.id) {
+        alert("Please login again.");
+        return;
+      }
+
       const { error } = await supabase
         .from("expenses")
         .delete()
-        .eq("id", id);
+        .eq("id", id)
+        .eq("user_id", session.user.id);
 
       if (error) throw error;
 
@@ -596,84 +1544,107 @@ const last6Months = useMemo(() => {
     setModal("income");
   };
 
-  const saveIncome = async (e) => {
-    e.preventDefault();
+ const saveIncome = async (e) => {
+  e.preventDefault();
 
-    if (
-      !incomeForm.amount ||
-      Number(incomeForm.amount) <= 0
-    ) {
-      alert("Please enter a valid income amount.");
-      return;
-    }
+  if (
+    !incomeForm.amount ||
+    Number(incomeForm.amount) <= 0
+  ) {
+    alert("Please enter a valid income amount.");
+    return;
+  }
 
-    setSaving(true);
+  if (!session?.user?.id) {
+    alert("Please login again.");
+    return;
+  }
 
-    try {
-      const payload = {
-        amount: Number(incomeForm.amount),
-        source: incomeForm.source,
-        date: incomeForm.date,
-        payment_mode:
-          incomeForm.paymentMode,
-        note: incomeForm.note || "",
-      };
+  setSaving(true);
 
-      if (editing) {
-        const { data, error } =
-          await supabase
-            .from("incomes")
-            .update(payload)
-            .eq("id", editing.id)
-            .select()
-            .single();
+  try {
+    const userId = session.user.id;
 
-        if (error) throw error;
+    const payload = {
+      user_id: userId,
+      amount: Number(incomeForm.amount),
+      source: incomeForm.source,
+      date: incomeForm.date,
+      payment_mode: incomeForm.paymentMode,
+      note: incomeForm.note || "",
+    };
 
-        setIncomes((prev) =>
-          prev.map((x) =>
-            x.id === editing.id
-              ? normalizeIncome(data)
-              : x
-          )
-        );
-      } else {
-        const { data, error } =
-          await supabase
-            .from("incomes")
-            .insert(payload)
-            .select()
-            .single();
+    if (editing) {
+      const { data, error } = await supabase
+        .from("incomes")
+        .update({
+          amount: Number(incomeForm.amount),
+          source: incomeForm.source,
+          date: incomeForm.date,
+          payment_mode: incomeForm.paymentMode,
+          note: incomeForm.note || "",
+        })
+        .eq("id", editing.id)
+        .eq("user_id", userId)
+        .select()
+        .single();
 
-        if (error) throw error;
+      if (error) throw error;
 
-        setIncomes((prev) => [
-          normalizeIncome(data),
-          ...prev,
-        ]);
-      }
-
-      closeModal();
-    } catch (error) {
-      alert(
-        `Unable to save income.\n\n${
-          error.message || error
-        }`
+      setIncomes((prev) =>
+        prev.map((x) =>
+          x.id === editing.id
+            ? normalizeIncome(data)
+            : x
+        )
       );
-    } finally {
-      setSaving(false);
+    } else {
+      const { data, error } = await supabase
+        .from("incomes")
+        .insert(payload)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setIncomes((prev) => [
+        normalizeIncome(data),
+        ...prev,
+      ]);
     }
-  };
+
+    closeModal();
+  } catch (error) {
+    console.error(
+      "Income save error:",
+      error
+    );
+
+    alert(
+      `Unable to save income.\n\n${
+        error.message || error
+      }`
+    );
+  } finally {
+    setSaving(false);
+  }
+};
 
   const deleteIncome = async (id) => {
     if (!window.confirm("Delete this income?"))
       return;
 
     try {
+      if (!session?.user?.id) {
+        alert("Please login again.");
+        return;
+      }
+
       const { error } = await supabase
         .from("incomes")
         .delete()
-        .eq("id", id);
+        .eq("id", id)
+        .eq("user_id", session.user.id);
 
       if (error) throw error;
 
@@ -699,44 +1670,39 @@ const last6Months = useMemo(() => {
     setLoanForm(
       loan
         ? {
-            loanType:
-              loan.loanType ||
-              "Home Loan",
-            loanName:
-              loan.loanName || "",
-            lender:
-              loan.lender || "",
-            amount:
-              loan.amount || "",
-            outstanding:
-              loan.outstanding ??
-              loan.amount ??
-              "",
-            interestRate:
-              loan.interestRate || "",
-            emi:
-              loan.emi || "",
-            tenure:
-              loan.tenure || "",
-            startDate:
-              loan.startDate ||
-              getToday(),
-            nextEmiDate:
-              loan.nextEmiDate || "",
-            note:
-              loan.note || "",
+            loanName: loan.loanName || "",
+            lender: loan.lender || "",
+            amount: loan.amount ?? "",
+            principalPaidTillDate: loan.principalPaidTillDate ?? "",
+            interestPaidTillDate: loan.interestPaidTillDate ?? "",
+            originalLoanStartDate: loan.originalLoanStartDate || "",
+
+            outstanding: loan.outstanding ?? "",
+            interestRate: loan.interestRate ?? "",
+            tenure: loan.tenure ?? "",
+            emi: loan.emi ?? "",
+            nextEmiDate: loan.nextEmiDate || "",
+            trackingDate: loan.trackingDate || "",
+
+            loanType: loan.loanType || "Home Loan",
+            note: loan.note || "",
           }
         : {
-            loanType: "Home Loan",
             loanName: "",
             lender: "",
             amount: "",
+            principalPaidTillDate: "",
+            interestPaidTillDate: "",
+            originalLoanStartDate: "",
+
             outstanding: "",
             interestRate: "",
-            emi: "",
             tenure: "",
-            startDate: getToday(),
+            emi: "",
             nextEmiDate: "",
+            trackingDate: getToday(),
+
+            loanType: "Home Loan",
             note: "",
           }
     );
@@ -747,93 +1713,135 @@ const last6Months = useMemo(() => {
   const saveLoan = async (e) => {
     e.preventDefault();
 
-    if (
-      !loanForm.loanName.trim() ||
-      !loanForm.amount ||
-      !loanForm.emi
-    ) {
-      alert(
-        "Please enter Loan Name, Amount and EMI."
-      );
+    if (!session?.user?.id) {
+      alert("Please login again.");
       return;
+    }
+
+    const originalAmount = Number(loanForm.amount);
+    const historicalPrincipal = Number(loanForm.principalPaidTillDate || 0);
+    const historicalInterest = Number(loanForm.interestPaidTillDate || 0);
+    const currentOutstanding = Number(loanForm.outstanding);
+    const interestRate = Number(loanForm.interestRate);
+    const pendingTenure = Number(loanForm.tenure);
+    const monthlyEmi = Number(loanForm.emi);
+    const trackingDate = loanForm.trackingDate;
+
+    if (!loanForm.loanName.trim()) {
+      alert("Please enter Loan Name.");
+      return;
+    }
+
+    if (!Number.isFinite(originalAmount) || originalAmount <= 0) {
+      alert("Please enter a valid Original Loan Amount.");
+      return;
+    }
+
+    if (historicalPrincipal < 0 || historicalInterest < 0) {
+      alert("Historical paid amounts cannot be negative.");
+      return;
+    }
+
+    if (!loanForm.originalLoanStartDate) {
+      alert("Please select Original Loan Start Date.");
+      return;
+    }
+
+    if (!Number.isFinite(currentOutstanding) || currentOutstanding < 0) {
+      alert("Please enter a valid Current Outstanding Principal.");
+      return;
+    }
+
+    if (!Number.isFinite(interestRate) || interestRate < 0) {
+      alert("Please enter a valid Interest Rate.");
+      return;
+    }
+
+    if (!trackingDate) {
+      alert("Please select Loan Tracking Date.");
+      return;
+    }
+
+    if (currentOutstanding > 0) {
+      if (!Number.isFinite(monthlyEmi) || monthlyEmi <= 0) {
+        alert("Please enter a valid Monthly EMI.");
+        return;
+      }
+
+      if (!Number.isFinite(pendingTenure) || pendingTenure <= 0) {
+        alert("Please enter a valid Pending Tenure.");
+        return;
+      }
+
+      if (!loanForm.nextEmiDate) {
+        alert("Please select Next EMI Date.");
+        return;
+      }
+
+      if (loanForm.nextEmiDate < trackingDate) {
+        alert("Next EMI Date cannot be before Loan Tracking Date.");
+        return;
+      }
     }
 
     setSaving(true);
 
     try {
+      const userId = session.user.id;
+      const status = currentOutstanding <= 0 ? "Closed" : "Active";
+
       const payload = {
-        loan_type:
-          loanForm.loanType,
-        loan_name:
-          loanForm.loanName.trim(),
-        lender:
-          loanForm.lender.trim(),
-        amount:
-          Number(loanForm.amount),
-        outstanding:
-          Number(
-            loanForm.outstanding ||
-              loanForm.amount
-          ),
-        interest_rate:
-          Number(
-            loanForm.interestRate || 0
-          ),
-        emi:
-          Number(loanForm.emi),
-        tenure:
-          Number(loanForm.tenure || 0),
-        start_date:
-          loanForm.startDate || null,
+        user_id: userId,
+
+        /* Section 1 — historical only */
+        loan_name: loanForm.loanName.trim(),
+        lender: loanForm.lender.trim(),
+        amount: originalAmount,
+        principal_paid_till_date: historicalPrincipal,
+        interest_paid_till_date: historicalInterest,
+        start_date: loanForm.originalLoanStartDate,
+
+        /* Section 2 — current calculation inputs */
+        outstanding: currentOutstanding,
+        interest_rate: interestRate,
+        tenure: currentOutstanding > 0 ? pendingTenure : 0,
+        emi: currentOutstanding > 0 ? monthlyEmi : 0,
         next_emi_date:
-          loanForm.nextEmiDate || null,
-        note:
-          loanForm.note.trim(),
-        status:
-          editing?.status || "Active",
+          currentOutstanding > 0 ? loanForm.nextEmiDate : null,
+        tracking_date: trackingDate,
+
+        /* Section 3 */
+        loan_type: loanForm.loanType,
+        note: loanForm.note.trim(),
+        status,
       };
 
-      if (editing) {
-        const { data, error } =
-          await supabase
+      const query = editing
+        ? supabase
             .from("loans")
             .update(payload)
             .eq("id", editing.id)
-            .select()
-            .single();
+            .eq("user_id", userId)
+        : supabase.from("loans").insert(payload);
 
-        if (error) throw error;
+      const { data, error } = await query.select().single();
 
-        setLoans((prev) =>
-          prev.map((x) =>
-            x.id === editing.id
-              ? normalizeLoan(data)
-              : x
-          )
-        );
-      } else {
-        const { data, error } =
-          await supabase
-            .from("loans")
-            .insert(payload)
-            .select()
-            .single();
+      if (error) throw error;
 
-        if (error) throw error;
+      const normalized = normalizeLoan(data);
 
-        setLoans((prev) => [
-          normalizeLoan(data),
-          ...prev,
-        ]);
-      }
+      setLoans((prev) =>
+        editing
+          ? prev.map((x) => (x.id === editing.id ? normalized : x))
+          : [normalized, ...prev]
+      );
 
       closeModal();
     } catch (error) {
-      alert(
-        `Unable to save loan.\n\n${
-          error.message || error
-        }`
-      );
+      console.error("Loan save error:", error);
+      alert(`Unable to save loan.
+
+${error.message || error}`);
     } finally {
       setSaving(false);
     }
@@ -842,71 +1850,59 @@ const last6Months = useMemo(() => {
  const deleteLoan = async (id) => {
   if (
     !window.confirm(
-      "Delete this loan and all its EMI payment history?"
+      "Delete this loan and all its EMI and prepayment history?"
     )
   ) {
     return;
   }
 
+  if (!session?.user?.id) {
+    alert("Please login again.");
+    return;
+  }
+
   try {
     setSaving(true);
+    const userId = session.user.id;
 
-    /* -----------------------------------------
-       1. DELETE EMI PAYMENT HISTORY
-    ----------------------------------------- */
-
-    const {
-      error: paymentError,
-    } = await supabase
+    const { error: emiError } = await supabase
       .from("emi_payments")
       .delete()
-      .eq("loan_id", id);
+      .eq("loan_id", id)
+      .eq("user_id", userId);
 
-    if (paymentError) {
-      throw paymentError;
-    }
+    if (emiError) throw emiError;
 
-    /* -----------------------------------------
-       2. DELETE LOAN
-    ----------------------------------------- */
+    const { error: prepaymentError } = await supabase
+      .from("prepayment_payments")
+      .delete()
+      .eq("loan_id", String(id))
+      .eq("user_id", userId);
 
-    const {
-      error: loanError,
-    } = await supabase
+    if (prepaymentError) throw prepaymentError;
+
+    const { error: loanError } = await supabase
       .from("loans")
       .delete()
-      .eq("id", id);
+      .eq("id", id)
+      .eq("user_id", userId);
 
-    if (loanError) {
-      throw loanError;
-    }
-
-    /* -----------------------------------------
-       3. UPDATE LOCAL EMI HISTORY
-    ----------------------------------------- */
+    if (loanError) throw loanError;
 
     setEmiPayments((prev) =>
-      prev.filter(
-        (x) => x.loanId !== id
-      )
+      prev.filter((x) => String(x.loanId) !== String(id))
     );
 
-    /* -----------------------------------------
-       4. UPDATE LOCAL LOANS
-    ----------------------------------------- */
+    setPrepaymentPayments((prev) =>
+      prev.filter((x) => String(x.loanId) !== String(id))
+    );
 
     setLoans((prev) =>
-      prev.filter(
-        (x) => x.id !== id
-      )
+      prev.filter((x) => String(x.id) !== String(id))
     );
-
   } catch (error) {
-    alert(
-      `Unable to delete loan.\n\n${
-        error.message || error
-      }`
-    );
+    console.error("Delete loan error:", error);
+    alert(`Unable to delete loan.\n\n${error.message || error}`);
   } finally {
     setSaving(false);
   }
@@ -917,26 +1913,7 @@ const last6Months = useMemo(() => {
   ========================= */
 
  const addMonth = (date, months = 1) => {
-  const getNextFutureEmiDate = (
-  nextEmiDate
-) => {
-  if (!nextEmiDate) return null;
-
-  const today = getToday();
-  let date = String(nextEmiDate).slice(
-    0,
-    10
-  );
-
-  while (date <= today) {
-    date = addMonth(date);
-  }
-
-  return date;
-};
-  const [year, month, day] = String(
-    date
-  )
+  const [year, month, day] = String(date)
     .slice(0, 10)
     .split("-")
     .map(Number);
@@ -971,166 +1948,49 @@ const last6Months = useMemo(() => {
     safeDay
   ).padStart(2, "0")}`;
 };
-
   const markEmiPaid = async (loan) => {
-    if (
-      (loan.status || "Active") ===
-      "Closed"
-    ) {
-      return;
-    }
+  if (
+    (loan.status || "Active") ===
+    "Closed"
+  ) {
+    return;
+  }
 
-    const currentOutstanding = Number(
-      loan.outstanding ??
-        loan.amount ??
-        0
-    );
+  if (!session?.user?.id) {
+    alert("Please login again.");
+    return;
+  }
 
-    const rate =
-      Number(loan.interestRate || 0) /
-      100 /
-      12;
-
-    const emi = Number(loan.emi || 0);
-
-    const interest =
-  currentOutstanding * rate;
-
-const principal = Math.min(
-  Math.max(emi - interest, 0),
-  currentOutstanding
-);
-
-const newOutstanding =
-  Math.max(
-    currentOutstanding -
-      principal,
-    0
+  const currentOutstanding = Number(
+    loan.outstanding ??
+      0
   );
 
-          /* =========================
-       ACCURATE REMAINING TENURE
-    ========================= */
+  const rate =
+    Number(loan.interestRate || 0) /
+    100 /
+    12;
 
-    let remainingTenure = 0;
+  const emi = Number(
+    loan.emi || 0
+  );
 
-    if (newOutstanding > 0 && emi > 0) {
-      if (
-        rate > 0 &&
-        emi > newOutstanding * rate
-      ) {
-        remainingTenure = Math.ceil(
-          -Math.log(
-            1 -
-              (newOutstanding * rate) /
-                emi
-          ) /
-            Math.log(1 + rate)
-        );
-      } else if (rate === 0) {
-        remainingTenure = Math.ceil(
-          newOutstanding / emi
-        );
-      } else {
-        remainingTenure = Number(
-          loan.tenure || 0
-        );
-      }
-    }
+  const dueDate = loan.nextEmiDate
+    ? String(
+        loan.nextEmiDate
+      ).slice(0, 10)
+    : null;
 
-  const nextDate = loan.nextEmiDate
-  ? addMonth(
-      String(loan.nextEmiDate).slice(0, 10)
-    )
-  : null;
+  if (!dueDate) {
+    alert(
+      "Next EMI date is not available."
+    );
+    return;
+  }
 
-    try {
-      setSaving(true);
-
-      const paymentPayload = {
-        loan_id: loan.id,
-        loan_name: loan.loanName,
-        amount: emi,
-        paid_date: getToday(),
-        emi_due_date: String(
-  loan.nextEmiDate
-).slice(0, 10),
-        
-        
-        principal_paid: principal,
-        interest_paid: interest,
-        remaining_principal: newOutstanding,
-      };
-
-      const {
-        data: paymentData,
-        error: paymentError,
-      } = await supabase
-        .from("emi_payments")
-        .insert(paymentPayload)
-        .select()
-        .single();
-
-      if (paymentError)
-        throw paymentError;
-
-      const loanPayload = {
-        outstanding:
-          newOutstanding,
-        next_emi_date:
-          newOutstanding > 0
-            ? nextDate
-            : null,
-        tenure: remainingTenure,
-
-        status:
-          newOutstanding <= 0
-            ? "Closed"
-            : "Active",
-      };
-
-      const {
-        data: loanData,
-        error: loanError,
-      } = await supabase
-        .from("loans")
-        .update(loanPayload)
-        .eq("id", loan.id)
-        .select()
-        .single();
-
-      if (loanError) throw loanError;
-
-      setEmiPayments((prev) => [
-        normalizeEmiPayment(
-          paymentData
-        ),
-        ...prev,
-      ]);
-
-      setLoans((prev) =>
-        prev.map((x) =>
-          x.id === loan.id
-            ? normalizeLoan(loanData)
-            : x
-        )
-      );
-    } catch (error) {
-      alert(
-        `Unable to mark EMI as paid.\n\n${
-          error.message || error
-        }`
-      );
-    } finally {
-      setSaving(false);
-    }
-  };
-
- const deleteEmiPayment = async (id) => {
   if (
-    !window.confirm(
-      "Delete this EMI payment history and restore the loan to its previous state?"
-    )
+    currentOutstanding <= 0 ||
+    emi <= 0
   ) {
     return;
   }
@@ -1138,157 +1998,194 @@ const newOutstanding =
   try {
     setSaving(true);
 
-    const payment = emiPayments.find(
-      (p) => p.id === id
-    );
+    const userId =
+      session.user.id;
 
-    if (!payment) {
-      throw new Error(
-        "EMI payment record not found."
-      );
+    /* =========================
+       PREVENT DUPLICATE EMI
+    ========================= */
+
+    const {
+      data: existingPayment,
+      error: existingPaymentError,
+    } = await supabase
+      .from("emi_payments")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("loan_id", loan.id)
+      .eq("emi_due_date", dueDate)
+      .limit(1);
+
+    if (existingPaymentError) {
+      throw existingPaymentError;
     }
 
-    const loan = loans.find(
-   (x) => x.id === payment.loanId
+    if (
+      existingPayment &&
+      existingPayment.length > 0
+    ) {
+      alert(
+        `EMI for ${dueDate} is already marked as paid.`
+      );
+
+      return;
+    }
+
+    /* =========================
+       EMI CALCULATION
+    ========================= */
+
+    const interest =
+      currentOutstanding * rate;
+
+    const principal = Math.min(
+      Math.max(
+        emi - interest,
+        0
+      ),
+      currentOutstanding
     );
 
+    const actualPaymentAmount =
+      Math.min(
+        emi,
+        currentOutstanding +
+          interest
+      );
 
-    /* -----------------------------------------
-       1. RESTORE OUTSTANDING PRINCIPAL
-    ----------------------------------------- */
-if (!loan) {
-  const {
-    error: paymentError,
-  } = await supabase
-    .from("emi_payments")
-    .delete()
-    .eq("id", id);
-
-  if (paymentError) {
-    throw paymentError;
-  }
-
-  setEmiPayments((prev) =>
-    prev.filter(
-      (x) => x.id !== id
-    )
-  );
-
-  return;
-}
-
-    const restoredOutstanding =
+    const newOutstanding =
       Math.max(
-        Number(
-          payment.remainingPrincipal || 0
-        ) +
-          Number(
-            payment.principalPaid || 0
-          ),
+        currentOutstanding -
+          principal,
         0
       );
 
-    /* -----------------------------------------
-/* -----------------------------------------
-   2. RESTORE DELETED EMI DUE DATE
+    /* =========================
+       ACCURATE REMAINING TENURE
+    ========================= */
 
-   Deleted EMI must become Pending again
-   if its due date has already arrived.
-
-   Example:
-   EMI Due Date = 2026-08-16
-   EMI Paid     = 2026-08-17
-   Delete EMI
-   Result       = next_emi_date 2026-08-16
-   → EMI becomes Pending again
------------------------------------------ */
-
-let restoredNextEmiDate = null;
-
-if (restoredOutstanding > 0) {
-  const baseDate =
-    payment.emiDueDate ||
-    loan.nextEmiDate ||
-    null;
-
-  if (baseDate) {
-    restoredNextEmiDate =
-      String(baseDate).slice(0, 10);
-  }
-}
-    /* -----------------------------------------
-       3. RECALCULATE REMAINING TENURE
-    ----------------------------------------- */
-
-    const rate =
-      Number(loan.interestRate || 0) /
-      100 /
-      12;
-
-    const emi =
-      Number(loan.emi || 0);
-
-    let restoredTenure = 0;
+    let remainingTenure = 0;
 
     if (
-      restoredOutstanding > 0 &&
+      newOutstanding > 0 &&
       emi > 0
     ) {
       if (
         rate > 0 &&
         emi >
-          restoredOutstanding * rate
+          newOutstanding * rate
       ) {
-        restoredTenure = Math.ceil(
-          -Math.log(
-            1 -
-              (restoredOutstanding *
-                rate) /
-                emi
-          ) /
-            Math.log(1 + rate)
-        );
-      } else if (rate === 0) {
-        restoredTenure = Math.ceil(
-          restoredOutstanding / emi
-        );
+        remainingTenure =
+          Math.ceil(
+            -Math.log(
+              1 -
+                (newOutstanding *
+                  rate) /
+                  emi
+            ) /
+              Math.log(
+                1 + rate
+              )
+          );
+      } else if (
+        rate === 0
+      ) {
+        remainingTenure =
+          Math.ceil(
+            newOutstanding /
+              emi
+          );
       } else {
-        restoredTenure =
-          Number(loan.tenure || 0) + 1;
+        remainingTenure =
+          Number(
+            loan.tenure || 0
+          );
       }
     }
 
-    /* -----------------------------------------
-       4. PREPARE LOAN UPDATE
-    ----------------------------------------- */
+    const nextDate =
+      newOutstanding > 0
+        ? addMonth(dueDate)
+        : null;
+
+    /* =========================
+       EMI PAYMENT
+    ========================= */
+
+    const paymentPayload = {
+      user_id: userId,
+      loan_id: loan.id,
+      loan_name:
+        loan.loanName,
+      amount:
+        actualPaymentAmount,
+      paid_date:
+        getToday(),
+
+      emi_due_date:
+        dueDate,
+
+      principal_paid:
+        principal,
+
+      interest_paid:
+        interest,
+
+      remaining_principal:
+        newOutstanding,
+    };
+
+    const {
+      data: paymentData,
+      error: paymentError,
+    } = await supabase
+      .from("emi_payments")
+      .insert(
+        paymentPayload
+      )
+      .select()
+      .single();
+
+    if (paymentError) {
+      throw paymentError;
+    }
+
+    /* =========================
+       UPDATE LOAN
+    ========================= */
 
     const loanPayload = {
       outstanding:
-        restoredOutstanding,
+        newOutstanding,
 
       next_emi_date:
-        restoredNextEmiDate,
+        nextDate,
 
       tenure:
-        restoredTenure,
+        remainingTenure,
 
       status:
-        restoredOutstanding > 0
-          ? "Active"
-          : "Closed",
+        newOutstanding <= 0
+          ? "Closed"
+          : "Active",
     };
-
-    /* -----------------------------------------
-       5. UPDATE LOAN
-    ----------------------------------------- */
 
     const {
       data: loanData,
       error: loanError,
     } = await supabase
       .from("loans")
-      .update(loanPayload)
-      .eq("id", loan.id)
+      .update(
+        loanPayload
+      )
+      .eq(
+        "id",
+        loan.id
+      )
+      .eq(
+        "user_id",
+        userId
+      )
       .select()
       .single();
 
@@ -1296,47 +2193,45 @@ if (restoredOutstanding > 0) {
       throw loanError;
     }
 
-    /* -----------------------------------------
-       6. DELETE EMI PAYMENT HISTORY
-    ----------------------------------------- */
+    /* =========================
+       UPDATE LOCAL EMI HISTORY
+    ========================= */
 
-    const {
-      error: paymentError,
-    } = await supabase
-      .from("emi_payments")
-      .delete()
-      .eq("id", id);
-
-    if (paymentError) {
-      throw paymentError;
-    }
-
-    /* -----------------------------------------
-       7. UPDATE LOAN STATE
-    ----------------------------------------- */
-
-    setLoans((prev) =>
-      prev.map((x) =>
-        x.id === loan.id
-          ? normalizeLoan(loanData)
-          : x
-      )
+    setEmiPayments(
+      (prev) => [
+        normalizeEmiPayment(
+          paymentData
+        ),
+        ...prev,
+      ]
     );
 
-    /* -----------------------------------------
-       8. REMOVE PAYMENT FROM UI
-    ----------------------------------------- */
+    /* =========================
+       UPDATE LOCAL LOAN
+    ========================= */
 
-    setEmiPayments((prev) =>
-      prev.filter(
-        (x) => x.id !== id
-      )
+    setLoans(
+      (prev) =>
+        prev.map(
+          (x) =>
+            x.id ===
+            loan.id
+              ? normalizeLoan(
+                  loanData
+                )
+              : x
+        )
     );
-
   } catch (error) {
+    console.error(
+      "EMI payment error:",
+      error
+    );
+
     alert(
-      `Unable to delete EMI payment.\n\n${
-        error.message || error
+      `Unable to mark EMI as paid.\n\n${
+        error.message ||
+        error
       }`
     );
   } finally {
@@ -1344,6 +2239,149 @@ if (restoredOutstanding > 0) {
   }
 };
 
+
+const deleteEmiPayment = async (id) => {
+  if (
+    !window.confirm(
+      "Delete this EMI payment and restore the loan to the state before this payment?"
+    )
+  ) {
+    return;
+  }
+
+  if (!session?.user?.id) {
+    alert("Please login again.");
+    return;
+  }
+
+  try {
+    setSaving(true);
+    const userId = session.user.id;
+
+    const payment = emiPayments.find(
+      (p) => String(p.id) === String(id)
+    );
+
+    if (!payment) {
+      throw new Error("EMI payment record not found.");
+    }
+
+    const loan = loans.find(
+      (x) => String(x.id) === String(payment.loanId)
+    );
+
+    if (!loan) {
+      throw new Error("Loan linked with this EMI was not found.");
+    }
+
+    /*
+     * Only the latest EMI for a loan can be reversed safely.
+     * Reversing an older EMI would invalidate principal/interest
+     * calculations of all later payments.
+     */
+    const loanPayments = emiPayments
+      .filter((p) => String(p.loanId) === String(loan.id))
+      .sort((a, b) => {
+        const aDate = String(a.emiDueDate || a.paidDate || a.createdAt || "");
+        const bDate = String(b.emiDueDate || b.paidDate || b.createdAt || "");
+        return bDate.localeCompare(aDate);
+      });
+
+    const latestPayment = loanPayments[0];
+
+    if (!latestPayment || String(latestPayment.id) !== String(id)) {
+      alert(
+        "For calculation safety, delete the latest EMI of this loan first. Older EMI records cannot be reversed while newer EMI payments exist."
+      );
+      return;
+    }
+
+    const currentOutstanding = Number(loan.outstanding ?? 0);
+    const deletedPrincipal = Number(payment.principalPaid || 0);
+    const restoredOutstanding = Math.max(
+      currentOutstanding + deletedPrincipal,
+      0
+    );
+
+    const rate = Number(loan.interestRate || 0) / 100 / 12;
+    const emi = Number(loan.emi || 0);
+
+    let restoredTenure = 0;
+
+    if (restoredOutstanding > 0 && emi > 0) {
+      if (rate > 0 && emi > restoredOutstanding * rate) {
+        restoredTenure = Math.ceil(
+          -Math.log(1 - (restoredOutstanding * rate) / emi) /
+            Math.log(1 + rate)
+        );
+      } else if (rate === 0) {
+        restoredTenure = Math.ceil(restoredOutstanding / emi);
+      } else {
+        restoredTenure = Math.max(Number(loan.tenure || 0) + 1, 1);
+      }
+    }
+
+    const restoredNextEmiDate =
+      payment.emiDueDate || payment.emi_due_date || loan.nextEmiDate || null;
+
+    const previousLoanState = {
+      outstanding: currentOutstanding,
+      next_emi_date: loan.nextEmiDate || null,
+      tenure: Number(loan.tenure || 0),
+      status: loan.status || "Active",
+    };
+
+    const loanPayload = {
+      outstanding: restoredOutstanding,
+      next_emi_date: restoredOutstanding > 0 ? restoredNextEmiDate : null,
+      tenure: restoredTenure,
+      status: restoredOutstanding > 0 ? "Active" : "Closed",
+    };
+
+    const { data: loanData, error: loanError } = await supabase
+      .from("loans")
+      .update(loanPayload)
+      .eq("id", loan.id)
+      .eq("user_id", userId)
+      .select()
+      .single();
+
+    if (loanError) throw loanError;
+
+    const { error: paymentError } = await supabase
+      .from("emi_payments")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", userId);
+
+    if (paymentError) {
+      /* Best-effort rollback if payment deletion fails. */
+      await supabase
+        .from("loans")
+        .update(previousLoanState)
+        .eq("id", loan.id)
+        .eq("user_id", userId);
+      throw paymentError;
+    }
+
+    setLoans((prev) =>
+      prev.map((x) =>
+        String(x.id) === String(loan.id) ? normalizeLoan(loanData) : x
+      )
+    );
+
+    setEmiPayments((prev) =>
+      prev.filter((x) => String(x.id) !== String(id))
+    );
+  } catch (error) {
+    console.error("Delete EMI error:", error);
+    alert(`Unable to delete EMI payment.
+
+${error.message || error}`);
+  } finally {
+    setSaving(false);
+  }
+};
   /* =========================
      PREPAYMENT
   ========================= */
@@ -1354,7 +2392,6 @@ if (restoredOutstanding > 0) {
     setPrepayForm({
       outstanding:
         loan.outstanding ??
-        loan.amount ??
         "",
       interestRate:
         loan.interestRate || "",
@@ -1483,88 +2520,253 @@ if (restoredOutstanding > 0) {
     };
   }, [prepayForm]);
   const applyPrepayment = async () => {
-  if (!selectedLoan || !prepayResult) return;
+    if (!selectedLoan || !prepayResult) return;
 
-  const currentOutstanding = Number(
-    selectedLoan.outstanding ??
-      selectedLoan.amount ??
+    if (!session?.user?.id) {
+      alert("Please login again.");
+      return;
+    }
+
+    const currentOutstanding = Number(selectedLoan.outstanding ?? 0);
+    const prepaymentAmount = Number(prepayForm.prepayment || 0);
+
+    if (prepaymentAmount <= 0) {
+      alert("Please enter a valid prepayment amount.");
+      return;
+    }
+
+    if (prepaymentAmount > currentOutstanding) {
+      alert("Prepayment cannot be greater than outstanding amount.");
+      return;
+    }
+
+    const newOutstanding = Math.max(
+      currentOutstanding - prepaymentAmount,
       0
-  );
-
-  const prepaymentAmount = Number(
-    prepayForm.prepayment || 0
-  );
-
-  if (prepaymentAmount <= 0) {
-    alert(
-      "Please enter a valid prepayment amount."
     );
-    return;
-  }
 
-  if (prepaymentAmount > currentOutstanding) {
-    alert(
-      "Prepayment cannot be greater than outstanding amount."
-    );
-    return;
-  }
+    try {
+      setSaving(true);
 
-  const newOutstanding = Math.max(
-    currentOutstanding -
-      prepaymentAmount,
-    0
-  );
+      const userId = session.user.id;
+      const reduceEmi = prepayForm.option === "emi";
+      const oldEmi = Number(selectedLoan.emi || 0);
+      const oldTenure = Number(selectedLoan.tenure || 0);
+      const oldNextEmiDate = selectedLoan.nextEmiDate || null;
+      const oldStatus = selectedLoan.status || "Active";
 
-  try {
-    setSaving(true);
-
-    const payload = {
-      outstanding: newOutstanding,
-      next_emi_date:
+      const newTenure =
         newOutstanding > 0
-          ? selectedLoan.nextEmiDate
-          : null,
-      tenure:
+          ? reduceEmi
+            ? Number(prepayForm.remainingTenure || oldTenure)
+            : prepayResult.newTenure
+          : 0;
+
+      const newEmi =
         newOutstanding > 0
-          ? prepayResult.newTenure
-          : 0,
-      status:
-        newOutstanding <= 0
-          ? "Closed"
-          : "Active",
-    };
+          ? reduceEmi
+            ? Number(prepayResult.newEmi || 0)
+            : oldEmi
+          : 0;
 
-    const {
-      data,
-      error,
-    } = await supabase
-      .from("loans")
-      .update(payload)
-      .eq("id", selectedLoan.id)
-      .select()
-      .single();
+      const newNextEmiDate =
+        newOutstanding > 0 ? oldNextEmiDate : null;
 
-    if (error) throw error;
+      const newStatus =
+        newOutstanding <= 0 ? "Closed" : "Active";
 
-    setLoans((prev) =>
-      prev.map((x) =>
-        x.id === selectedLoan.id
-          ? normalizeLoan(data)
-          : x
+      const historyPayload = {
+        user_id: userId,
+        loan_id: String(selectedLoan.id),
+        loan_name: selectedLoan.loanName,
+        amount: prepaymentAmount,
+        paid_date: getToday(),
+        strategy: reduceEmi ? "emi" : "tenure",
+        old_outstanding: currentOutstanding,
+        new_outstanding: newOutstanding,
+        old_emi: oldEmi,
+        new_emi: newEmi,
+        old_tenure: oldTenure,
+        new_tenure: newTenure,
+        old_next_emi_date: oldNextEmiDate,
+        new_next_emi_date: newNextEmiDate,
+        old_status: oldStatus,
+        new_status: newStatus,
+      };
+
+      const { data: historyData, error: historyError } = await supabase
+        .from("prepayment_payments")
+        .insert(historyPayload)
+        .select()
+        .single();
+
+      if (historyError) throw historyError;
+
+      const loanPayload = {
+        outstanding: newOutstanding,
+        next_emi_date: newNextEmiDate,
+        tenure: newTenure,
+        emi: newEmi,
+        status: newStatus,
+      };
+
+      const { data: loanData, error: loanError } = await supabase
+        .from("loans")
+        .update(loanPayload)
+        .eq("id", selectedLoan.id)
+        .eq("user_id", userId)
+        .select()
+        .single();
+
+      if (loanError) {
+        await supabase
+          .from("prepayment_payments")
+          .delete()
+          .eq("id", historyData.id)
+          .eq("user_id", userId);
+        throw loanError;
+      }
+
+      setLoans((prev) =>
+        prev.map((x) =>
+          String(x.id) === String(selectedLoan.id)
+            ? normalizeLoan(loanData)
+            : x
+        )
+      );
+
+      setPrepaymentPayments((prev) => [
+        normalizePrepaymentPayment(historyData),
+        ...prev,
+      ]);
+
+      closeModal();
+    } catch (error) {
+      console.error("Prepayment error:", error);
+      alert(`Unable to apply prepayment.\n\n${error.message || error}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deletePrepaymentPayment = async (id) => {
+    if (
+      !window.confirm(
+        "Delete this prepayment record and restore the loan to the state before this prepayment?"
       )
+    ) {
+      return;
+    }
+
+    if (!session?.user?.id) {
+      alert("Please login again.");
+      return;
+    }
+
+    const payment = prepaymentPayments.find(
+      (p) => String(p.id) === String(id)
     );
 
-    closeModal();
-  } catch (error) {
-    alert(
-      `Unable to apply prepayment.\n\n${
-        error.message || error
-      }`
+    if (!payment) {
+      alert("Prepayment record not found.");
+      return;
+    }
+
+    const loan = loans.find(
+      (x) => String(x.id) === String(payment.loanId)
     );
-  } finally {
-    setSaving(false);
-  }
-};
+
+    if (!loan) {
+      alert("Loan linked with this prepayment was not found.");
+      return;
+    }
+
+    const paymentCreatedAt = String(payment.createdAt || "");
+
+    const hasLaterEmi = emiPayments.some(
+      (x) =>
+        String(x.loanId) === String(payment.loanId) &&
+        String(x.createdAt || "") > paymentCreatedAt
+    );
+
+    const hasLaterPrepayment = prepaymentPayments.some(
+      (x) =>
+        String(x.loanId) === String(payment.loanId) &&
+        String(x.id) !== String(payment.id) &&
+        String(x.createdAt || "") > paymentCreatedAt
+    );
+
+    if (hasLaterEmi || hasLaterPrepayment) {
+      alert(
+        "For calculation safety, delete later EMI or prepayment records for this loan first."
+      );
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const userId = session.user.id;
+
+      const restorePayload = {
+        outstanding: Number(payment.oldOutstanding || 0),
+        emi: Number(payment.oldEmi || 0),
+        tenure: Number(payment.oldTenure || 0),
+        next_emi_date: payment.oldNextEmiDate || null,
+        status: payment.oldStatus || "Active",
+      };
+
+      const { data: loanData, error: loanError } = await supabase
+        .from("loans")
+        .update(restorePayload)
+        .eq("id", loan.id)
+        .eq("user_id", userId)
+        .select()
+        .single();
+
+      if (loanError) throw loanError;
+
+      const { error: deleteError } = await supabase
+        .from("prepayment_payments")
+        .delete()
+        .eq("id", id)
+        .eq("user_id", userId);
+
+      if (deleteError) {
+        const rollbackPayload = {
+          outstanding: Number(payment.newOutstanding || 0),
+          emi: Number(payment.newEmi || 0),
+          tenure: Number(payment.newTenure || 0),
+          next_emi_date: payment.newNextEmiDate || null,
+          status: payment.newStatus || "Active",
+        };
+
+        await supabase
+          .from("loans")
+          .update(rollbackPayload)
+          .eq("id", loan.id)
+          .eq("user_id", userId);
+
+        throw deleteError;
+      }
+
+      setLoans((prev) =>
+        prev.map((x) =>
+          String(x.id) === String(loan.id)
+            ? normalizeLoan(loanData)
+            : x
+        )
+      );
+
+      setPrepaymentPayments((prev) =>
+        prev.filter((x) => String(x.id) !== String(id))
+      );
+    } catch (error) {
+      console.error("Delete prepayment error:", error);
+      alert(`Unable to delete prepayment.\n\n${error.message || error}`);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   /* =========================
      DASHBOARD
@@ -1637,75 +2839,35 @@ if (restoredOutstanding > 0) {
 const getPendingEmis = (loan) => {
   if (
     (loan.status || "Active") === "Closed" ||
-    !loan.nextEmiDate ||
-    Number(
-      loan.outstanding ??
-        loan.amount ??
-        0
-    ) <= 0
+    Number(loan.outstanding ?? 0) <= 0 ||
+    !loan.nextEmiDate
   ) {
     return [];
   }
 
   const today = getToday();
+  let dueDate = String(loan.nextEmiDate).slice(0, 10);
 
-  const nextDate = String(
-    loan.nextEmiDate
-  ).slice(0, 10);
-
-  const pending = [];
-
-  /* -----------------------------------------
-     CASE 1:
-     Next EMI itself is overdue
-  ----------------------------------------- */
-
-  if (nextDate <= today) {
-    let dueDate = nextDate;
-
-    while (dueDate <= today) {
-      const alreadyPaid =
-        emiPayments.some((p) => {
-          const paymentLoanId =
-            String(
-              p.loanId ??
-                p.loan_id ??
-                ""
-            );
-
-          const paymentDueDate =
-            String(
-              p.emiDueDate ??
-                p.emi_due_date ??
-                ""
-            ).slice(0, 10);
-
-          return (
-            paymentLoanId ===
-              String(loan.id) &&
-            paymentDueDate ===
-              String(dueDate).slice(0, 10)
-          );
-        });
-
-      if (!alreadyPaid) {
-        pending.push({
-          loanId: loan.id,
-          loanName: loan.loanName,
-          amount: Number(
-            loan.emi || 0
-          ),
-          dueDate,
-        });
-      }
-
-      dueDate = addMonth(dueDate);
-    }
-
-    return pending;
+  if (dueDate > today) {
+    return [];
   }
 
-  return [];
+  const pending = [];
+  let safetyCounter = 0;
+
+  while (dueDate <= today && safetyCounter < 600) {
+    pending.push({
+      loanId: loan.id,
+      loanName: loan.loanName,
+      amount: Number(loan.emi || 0),
+      dueDate,
+    });
+
+    dueDate = addMonth(dueDate);
+    safetyCounter += 1;
+  }
+
+  return pending;
 };
   const getEmiStatus = (loan) => {
   if (
@@ -1767,149 +2929,683 @@ const getPendingEmis = (loan) => {
 };
 
   /* =========================
-     BACKUP
+     BACKUP / RESTORE
   ========================= */
 
-  const exportData = () => {
-    const data = {
-      expenses,
-      incomes,
-      loans,
-      emiPayments,
-      exportedAt:
-        new Date().toISOString(),
-    };
+  const DRIVE_BACKUP_FOLDER = "Maza Hishob Backups";
 
-    const blob = new Blob(
-      [
-        JSON.stringify(
-          data,
-          null,
-          2
-        ),
-      ],
+  const buildBackupData = () => ({
+    app: "Maza Hishob",
+    schemaVersion: 3,
+    exportedAt: new Date().toISOString(),
+    ownerEmail: session?.user?.email || "",
+    expenses,
+    incomes,
+    loans,
+    emiPayments,
+    prepaymentPayments,
+  });
+
+  const validateBackupData = (data) => {
+    if (
+      !data ||
+      !Array.isArray(data.expenses) ||
+      !Array.isArray(data.incomes) ||
+      !Array.isArray(data.loans)
+    ) {
+      throw new Error("Invalid Maza Hishob backup file.");
+    }
+
+    if (
+      data.ownerEmail &&
+      session?.user?.email &&
+      String(data.ownerEmail).toLowerCase() !==
+        String(session.user.email).toLowerCase()
+    ) {
+      throw new Error(
+        `This backup belongs to ${data.ownerEmail}. Please sign in with the same Google account to restore it.`
+      );
+    }
+
+    return data;
+  };
+
+  const getDriveAccessToken = () => {
+    if (!driveConnected) {
+      throw new Error(
+        "Google Drive is disconnected. Connect Google Drive from Settings if you want cloud backup."
+      );
+    }
+
+    const token = session?.provider_token;
+
+    if (!token) {
+      throw new Error(
+        "Google Drive permission is unavailable. Disconnect and connect Google Drive again."
+      );
+    }
+
+    return token;
+  };
+
+  const driveFetch = async (url, options = {}) => {
+    const token = getDriveAccessToken();
+
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(options.headers || {}),
+      },
+    });
+
+    if (!response.ok) {
+      let details = "";
+
+      try {
+        const body = await response.json();
+        details =
+          body?.error?.message ||
+          body?.error_description ||
+          "";
+      } catch {
+        details = await response.text().catch(() => "");
+      }
+
+      if (response.status === 401 || response.status === 403) {
+        throw new Error(
+          `Google Drive permission needs to be refreshed${
+            details ? `: ${details}` : "."
+          } Disconnect and connect Google Drive again to refresh access.`
+        );
+      }
+
+      throw new Error(
+        `Google Drive request failed (${response.status})${
+          details ? `: ${details}` : "."
+        }`
+      );
+    }
+
+    return response;
+  };
+
+  const getOrCreateDriveBackupFolder = async () => {
+    const query = [
+      `name='${DRIVE_BACKUP_FOLDER}'`,
+      "mimeType='application/vnd.google-apps.folder'",
+      "trashed=false",
+    ].join(" and ");
+
+    const listUrl =
+      "https://www.googleapis.com/drive/v3/files" +
+      `?q=${encodeURIComponent(query)}` +
+      "&spaces=drive" +
+      "&pageSize=10" +
+      "&fields=files(id,name,createdTime)";
+
+    const listResponse = await driveFetch(listUrl);
+    const listData = await listResponse.json();
+
+    if (listData.files?.length) {
+      return listData.files[0].id;
+    }
+
+    const createResponse = await driveFetch(
+      "https://www.googleapis.com/drive/v3/files?fields=id,name",
       {
-        type: "application/json",
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: DRIVE_BACKUP_FOLDER,
+          mimeType: "application/vnd.google-apps.folder",
+        }),
       }
     );
 
-    const url =
-      URL.createObjectURL(blob);
+    const created = await createResponse.json();
+    return created.id;
+  };
 
-    const a =
-      document.createElement("a");
+  const listDriveBackups = async ({ silent = false } = {}) => {
+    if (!silent) {
+      setBackupMessage("");
+      setDriveBusy(true);
+    }
 
-    a.href = url;
+    try {
+      const folderId = await getOrCreateDriveBackupFolder();
+      const query = [
+        `'${folderId}' in parents`,
+        "trashed=false",
+        "mimeType='application/json'",
+      ].join(" and ");
 
-    a.download = `maza-hishob-backup-${getToday()}.json`;
+      const url =
+        "https://www.googleapis.com/drive/v3/files" +
+        `?q=${encodeURIComponent(query)}` +
+        "&spaces=drive" +
+        "&orderBy=createdTime desc" +
+        "&pageSize=50" +
+        "&fields=files(id,name,createdTime,modifiedTime,size)";
 
-    a.click();
+      const response = await driveFetch(url);
+      const data = await response.json();
+      const files = data.files || [];
 
-    URL.revokeObjectURL(url);
+      setDriveBackups(files);
+      setSelectedDriveBackupId((current) => {
+        if (current && files.some((file) => file.id === current)) {
+          return current;
+        }
+        return files[0]?.id || "";
+      });
 
-    setBackupMessage(
-      "Backup downloaded successfully."
+      if (!silent) {
+        setBackupMessage(
+          files.length
+            ? `${files.length} Google Drive backup${
+                files.length === 1 ? "" : "s"
+              } found.`
+            : "No Google Drive backups found yet."
+        );
+      }
+
+      return files;
+    } catch (error) {
+      console.error("Google Drive list error:", error);
+      if (!silent) {
+        setBackupMessage(error?.message || String(error));
+      }
+      return [];
+    } finally {
+      if (!silent) setDriveBusy(false);
+    }
+  };
+
+  const backupToGoogleDrive = async () => {
+    setBackupMessage("");
+    setDriveBusy(true);
+
+    try {
+      if (!session?.user?.id) {
+        throw new Error("Please login again.");
+      }
+
+      const folderId = await getOrCreateDriveBackupFolder();
+      const backup = buildBackupData();
+      const stamp = new Date()
+        .toISOString()
+        .replace(/[:.]/g, "-");
+      const fileName = `maza-hishob-backup-${stamp}.json`;
+      const boundary = `mh_boundary_${Date.now()}`;
+
+      const metadata = {
+        name: fileName,
+        mimeType: "application/json",
+        parents: [folderId],
+      };
+
+      const multipartBody = [
+        `--${boundary}\r\n`,
+        "Content-Type: application/json; charset=UTF-8\r\n\r\n",
+        JSON.stringify(metadata),
+        `\r\n--${boundary}\r\n`,
+        "Content-Type: application/json\r\n\r\n",
+        JSON.stringify(backup, null, 2),
+        `\r\n--${boundary}--`,
+      ].join("");
+
+      const response = await driveFetch(
+        "https://www.googleapis.com/upload/drive/v3/files" +
+          "?uploadType=multipart&fields=id,name,createdTime",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": `multipart/related; boundary=${boundary}`,
+          },
+          body: multipartBody,
+        }
+      );
+
+      const uploaded = await response.json();
+
+      setBackupMessage(
+        `Google Drive backup saved successfully: ${uploaded.name}`
+      );
+
+      await listDriveBackups({ silent: true });
+    } catch (error) {
+      console.error("Google Drive backup error:", error);
+      setBackupMessage(
+        `Unable to back up to Google Drive. ${
+          error?.message || error
+        }`
+      );
+    } finally {
+      setDriveBusy(false);
+    }
+  };
+
+  const clearUserDataInSupabase = async (userId) => {
+    const tables = [
+      "prepayment_payments",
+      "emi_payments",
+      "expenses",
+      "incomes",
+      "loans",
+    ];
+
+    for (const table of tables) {
+      const { error } = await supabase
+        .from(table)
+        .delete()
+        .eq("user_id", userId);
+
+      if (error) throw error;
+    }
+  };
+
+  const withId = (row, payload) =>
+    row?.id ? { id: row.id, ...payload } : payload;
+
+  const backupToDatabaseRows = (backup, userId) => ({
+    expenses: (backup.expenses || []).map((x) =>
+      withId(x, {
+        user_id: userId,
+        amount: Number(x.amount || 0),
+        category: x.category || "Other",
+        date: x.date || getToday(),
+        payment_mode:
+          x.payment_mode || x.paymentMode || "Cash",
+        note: x.note || "",
+      })
+    ),
+
+    incomes: (backup.incomes || []).map((x) =>
+      withId(x, {
+        user_id: userId,
+        amount: Number(x.amount || 0),
+        source: x.source || "Other",
+        date: x.date || getToday(),
+        payment_mode:
+          x.payment_mode || x.paymentMode || "Bank Transfer",
+        note: x.note || "",
+      })
+    ),
+
+    loans: (backup.loans || []).map((x) =>
+      withId(x, {
+        user_id: userId,
+        loan_type: x.loan_type || x.loanType || "Other Loan",
+        loan_name: x.loan_name || x.loanName || "",
+        lender: x.lender || "",
+        amount: Number(x.amount ?? x.principal_amount ?? 0),
+        principal_paid_till_date: Number(
+          x.principal_paid_till_date ??
+            x.principalPaidTillDate ??
+            0
+        ),
+        interest_paid_till_date: Number(
+          x.interest_paid_till_date ??
+            x.interestPaidTillDate ??
+            0
+        ),
+        start_date:
+          x.start_date ||
+          x.originalLoanStartDate ||
+          x.startDate ||
+          null,
+        outstanding: Number(
+          x.outstanding ?? x.outstanding_principal ?? 0
+        ),
+        interest_rate: Number(
+          x.interest_rate ?? x.interestRate ?? 0
+        ),
+        emi: Number(x.emi ?? x.emi_amount ?? 0),
+        tenure: Number(
+          x.tenure ?? x.remaining_tenure ?? x.tenure_months ?? 0
+        ),
+        next_emi_date:
+          x.next_emi_date || x.nextEmiDate || null,
+        tracking_date:
+          x.tracking_date || x.trackingDate || null,
+        note: x.note || "",
+        status: x.status || "Active",
+      })
+    ),
+
+    emiPayments: (backup.emiPayments || []).map((x) =>
+      withId(x, {
+        user_id: userId,
+        loan_id: x.loan_id || x.loanId,
+        loan_name: x.loan_name || x.loanName || "",
+        amount: Number(x.amount || 0),
+        paid_date: x.paid_date || x.paidDate || getToday(),
+        emi_due_date: x.emi_due_date || x.emiDueDate || null,
+        principal_paid: Number(
+          x.principal_paid ?? x.principalPaid ?? 0
+        ),
+        interest_paid: Number(
+          x.interest_paid ?? x.interestPaid ?? 0
+        ),
+        remaining_principal: Number(
+          x.remaining_principal ?? x.remainingPrincipal ?? 0
+        ),
+      })
+    ),
+
+    prepaymentPayments: (backup.prepaymentPayments || []).map(
+      (x) =>
+        withId(x, {
+          user_id: userId,
+          loan_id: String(x.loan_id || x.loanId || ""),
+          loan_name: x.loan_name || x.loanName || "",
+          amount: Number(x.amount || 0),
+          paid_date: x.paid_date || x.paidDate || getToday(),
+          strategy: x.strategy || "tenure",
+          old_outstanding: Number(
+            x.old_outstanding ?? x.oldOutstanding ?? 0
+          ),
+          new_outstanding: Number(
+            x.new_outstanding ?? x.newOutstanding ?? 0
+          ),
+          old_emi: Number(x.old_emi ?? x.oldEmi ?? 0),
+          new_emi: Number(x.new_emi ?? x.newEmi ?? 0),
+          old_tenure: Number(
+            x.old_tenure ?? x.oldTenure ?? 0
+          ),
+          new_tenure: Number(
+            x.new_tenure ?? x.newTenure ?? 0
+          ),
+          old_next_emi_date:
+            x.old_next_emi_date || x.oldNextEmiDate || null,
+          new_next_emi_date:
+            x.new_next_emi_date || x.newNextEmiDate || null,
+          old_status: x.old_status || x.oldStatus || "Active",
+          new_status: x.new_status || x.newStatus || "Active",
+          note: x.note || "",
+        })
+    ),
+  });
+
+  const insertRows = async (table, rows) => {
+    if (!rows.length) return;
+
+    const { error } = await supabase
+      .from(table)
+      .insert(rows);
+
+    if (error) throw error;
+  };
+
+  const writeBackupToSupabase = async (backup, userId) => {
+    const rows = backupToDatabaseRows(backup, userId);
+
+    await insertRows("loans", rows.loans);
+    await insertRows("expenses", rows.expenses);
+    await insertRows("incomes", rows.incomes);
+    await insertRows("emi_payments", rows.emiPayments);
+    await insertRows(
+      "prepayment_payments",
+      rows.prepaymentPayments
     );
   };
 
-  const importData = (e) => {
-    const file =
-      e.target.files?.[0];
+  const applyBackupToLocalState = (backup) => {
+    setExpenses(
+      (backup.expenses || []).map(normalizeExpense)
+    );
+    setIncomes(
+      (backup.incomes || []).map(normalizeIncome)
+    );
+    setLoans((backup.loans || []).map(normalizeLoan));
+    setEmiPayments(
+      (backup.emiPayments || []).map(normalizeEmiPayment)
+    );
+    setPrepaymentPayments(
+      (backup.prepaymentPayments || []).map(
+        normalizePrepaymentPayment
+      )
+    );
+  };
 
+  const restoreBackupToSupabase = async (rawBackup) => {
+    if (!session?.user?.id) {
+      throw new Error("Please login again.");
+    }
+
+    const backup = validateBackupData(rawBackup);
+    const userId = session.user.id;
+    const safetySnapshot = buildBackupData();
+
+    try {
+      await clearUserDataInSupabase(userId);
+      await writeBackupToSupabase(backup, userId);
+      applyBackupToLocalState(backup);
+    } catch (restoreError) {
+      console.error("Restore failed, attempting rollback:", restoreError);
+
+      try {
+        await clearUserDataInSupabase(userId);
+        await writeBackupToSupabase(safetySnapshot, userId);
+        applyBackupToLocalState(safetySnapshot);
+      } catch (rollbackError) {
+        console.error("Rollback failed:", rollbackError);
+        throw new Error(
+          `Restore failed and automatic rollback also failed. ${
+            restoreError?.message || restoreError
+          }`
+        );
+      }
+
+      throw restoreError;
+    }
+  };
+
+  const restoreFromGoogleDrive = async (backupId = selectedDriveBackupId) => {
+    setBackupMessage("");
+
+    if (!backupId) {
+      setBackupMessage(
+        "Select a Google Drive backup to restore."
+      );
+      return;
+    }
+
+    const selected = driveBackups.find(
+      (file) => file.id === backupId
+    );
+
+    const confirmed = window.confirm(
+      `Restore ${selected?.name || "this backup"}?\n\n` +
+        "Your current Maza Hishob data will be replaced by the selected backup. A rollback copy will be kept in memory while restoring."
+    );
+
+    if (!confirmed) return;
+
+    setDriveBusy(true);
+    setSaving(true);
+
+    try {
+      const response = await driveFetch(
+        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+          backupId
+        )}?alt=media`
+      );
+
+      const backup = await response.json();
+      await restoreBackupToSupabase(backup);
+
+      setBackupMessage(
+        `Google Drive backup restored successfully: ${
+          selected?.name || "selected backup"
+        }`
+      );
+    } catch (error) {
+      console.error("Google Drive restore error:", error);
+      setBackupMessage(
+        `Unable to restore Google Drive backup. ${
+          error?.message || error
+        }`
+      );
+    } finally {
+      setDriveBusy(false);
+      setSaving(false);
+    }
+  };
+
+  const deleteSelectedDriveBackup = async (backupId = selectedDriveBackupId) => {
+    setBackupMessage("");
+
+    if (!driveConnected) {
+      setBackupMessage(
+        "Connect Google Drive before deleting a cloud backup."
+      );
+      return;
+    }
+
+    if (!backupId) {
+      setBackupMessage("Select a Google Drive backup to delete.");
+      return;
+    }
+
+    const selected = driveBackups.find(
+      (file) => file.id === backupId
+    );
+
+    const confirmed = window.confirm(
+      `Permanently delete ${selected?.name || "this backup"} from Google Drive?\n\nThis action cannot be undone.`
+    );
+
+    if (!confirmed) return;
+
+    setDriveBusy(true);
+
+    try {
+      await driveFetch(
+        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+          backupId
+        )}`,
+        { method: "DELETE" }
+      );
+
+      setBackupMessage(
+        `Google Drive backup deleted successfully: ${
+          selected?.name || "selected backup"
+        }`
+      );
+
+      await listDriveBackups({ silent: true });
+    } catch (error) {
+      console.error("Google Drive delete error:", error);
+      setBackupMessage(
+        `Unable to delete Google Drive backup. ${
+          error?.message || error
+        }`
+      );
+    } finally {
+      setDriveBusy(false);
+    }
+  };
+
+  const exportData = () => {
+    const data = buildBackupData();
+    const blob = new Blob(
+      [JSON.stringify(data, null, 2)],
+      { type: "application/json" }
+    );
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+
+    a.href = url;
+    a.download = `maza-hishob-backup-${getToday()}.json`;
+    a.click();
+
+    URL.revokeObjectURL(url);
+    setBackupMessage("Backup downloaded successfully.");
+  };
+
+  const importData = (e) => {
+    const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader =
-      new FileReader();
+    const reader = new FileReader();
 
-    reader.onload = () => {
+    reader.onload = async () => {
       try {
-        const d =
-          JSON.parse(
-            reader.result
-          );
-
-        if (
-          !Array.isArray(
-            d.expenses
-          ) ||
-          !Array.isArray(
-            d.incomes
-          ) ||
-          !Array.isArray(
-            d.loans
-          )
-        ) {
-          throw new Error();
-        }
-
-        setExpenses(d.expenses);
-        setIncomes(d.incomes);
-        setLoans(d.loans);
-        setEmiPayments(
-          d.emiPayments || []
+        const backup = validateBackupData(
+          JSON.parse(reader.result)
         );
 
+        const confirmed = window.confirm(
+          `Restore backup from ${file.name}?\n\n` +
+            "Your current Maza Hishob data in Supabase will be replaced by this backup."
+        );
+
+        if (!confirmed) return;
+
+        setSaving(true);
+        await restoreBackupToSupabase(backup);
         setBackupMessage(
-          "Backup loaded in the app. Supabase data is not overwritten by this import."
+          "Local backup restored successfully to Supabase."
         );
-      } catch {
+      } catch (error) {
+        console.error("Local backup restore error:", error);
         setBackupMessage(
-          "Invalid backup file."
+          `Unable to restore backup. ${error?.message || error}`
         );
+      } finally {
+        setSaving(false);
+        e.target.value = "";
       }
     };
 
     reader.readAsText(file);
-
-    e.target.value = "";
   };
 
   const resetAll = async () => {
     if (
       !window.confirm(
-        "This will permanently delete all Maza Hishob data from Supabase. Continue?"
+        "This will permanently delete all of YOUR Maza Hishob data from Supabase. Continue?"
       )
     ) {
       return;
     }
 
+    if (!session?.user?.id) {
+      alert("Please login again.");
+      return;
+    }
+
     try {
       setSaving(true);
+      const userId = session.user.id;
 
-      await supabase
-        .from("emi_payments")
-        .delete()
-        .neq("id", 0);
+      const tables = ["prepayment_payments", "emi_payments", "expenses", "incomes", "loans"];
 
-      await supabase
-        .from("expenses")
-        .delete()
-        .neq("id", 0);
+      for (const table of tables) {
+        const { error } = await supabase
+          .from(table)
+          .delete()
+          .eq("user_id", userId);
 
-      await supabase
-        .from("incomes")
-        .delete()
-        .neq("id", 0);
-
-      await supabase
-        .from("loans")
-        .delete()
-        .neq("id", 0);
+        if (error) throw error;
+      }
 
       setExpenses([]);
       setIncomes([]);
       setLoans([]);
       setEmiPayments([]);
-
-      setBackupMessage(
-        "All data cleared."
-      );
+      setPrepaymentPayments([]);
+      setBackupMessage("All of your data has been cleared.");
     } catch (error) {
-      alert(
-        `Unable to reset data.\n\n${
-          error.message || error
-        }`
-      );
+      console.error("Reset data error:", error);
+      alert(`Unable to reset data.
+
+${error.message || error}`);
     } finally {
       setSaving(false);
     }
@@ -1927,6 +3623,240 @@ const getPendingEmis = (loan) => {
     ["loans", "▣", "Loans"],
     ["reports", "◫", "Reports"],
   ];
+/* =========================
+   AUTH PAGE — GOOGLE FIRST
+========================= */
+
+if (authLoading) {
+  return (
+    <div className="mh-auth-page">
+      <div className="mh-auth-orb mh-auth-orb-one" />
+      <div className="mh-auth-orb mh-auth-orb-two" />
+
+      <div className="mh-auth-card mh-auth-loading-card">
+        <img
+          className="mh-auth-logo"
+          src={mazaHishobLogo}
+          alt="Maza Hishob"
+        />
+
+        <div className="mh-auth-loading-ring" />
+
+        <h2>Checking your account</h2>
+
+        <p>
+          Securely restoring your Maza Hishob session...
+        </p>
+      </div>
+    </div>
+  );
+}
+
+if (!session) {
+  return (
+    <div className="mh-auth-page">
+      <div className="mh-auth-orb mh-auth-orb-one" />
+      <div className="mh-auth-orb mh-auth-orb-two" />
+      <div className="mh-auth-grid-glow" />
+
+      <main className="mh-auth-shell">
+        <section className="mh-auth-visual">
+          <div className="mh-auth-logo-halo">
+            <img
+              className="mh-auth-hero-logo"
+              src={mazaHishobLogo}
+              alt="Maza Hishob logo"
+            />
+          </div>
+
+          <span className="mh-auth-kicker">
+            PERSONAL FINANCE · PRIVATE BY DESIGN
+          </span>
+
+          <h1>
+            Your money.
+            <br />
+            Your control.
+          </h1>
+
+          <p>
+            Track expenses, income, loans, EMI and
+            prepayments from one secure financial dashboard.
+          </p>
+
+          <div className="mh-auth-feature-row">
+            <div>
+              <strong>Secure</strong>
+              <span>Google sign-in</span>
+            </div>
+
+            <div>
+              <strong>Private</strong>
+              <span>User-wise data</span>
+            </div>
+
+            <div>
+              <strong>Ready</strong>
+              <span>Google Drive backup</span>
+            </div>
+          </div>
+        </section>
+
+        <section className="mh-auth-card">
+          <div className="mh-auth-mobile-brand">
+            <img
+              src={mazaHishobLogo}
+              alt="Maza Hishob"
+            />
+
+            <div>
+              <strong>Maza Hishob</strong>
+              <span>Plan · Track · Grow</span>
+            </div>
+          </div>
+
+          <div className="mh-auth-card-head">
+            <span>WELCOME</span>
+            <h2>Sign in to Maza Hishob</h2>
+            <p>
+              Continue with your Google account to access
+              your personal financial data.
+            </p>
+          </div>
+
+          {authError && (
+            <div className="mh-auth-error">
+              {authError}
+            </div>
+          )}
+
+          <button
+            type="button"
+            className="mh-google-btn"
+            onClick={handleGoogleLogin}
+            disabled={authSaving}
+          >
+            <span className="mh-google-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path
+                  fill="#4285F4"
+                  d="M21.35 12.18c0-.64-.06-1.25-.16-1.84H12v3.48h5.25a4.49 4.49 0 0 1-1.95 2.94v2.26h3.16c1.85-1.7 2.89-4.21 2.89-6.84Z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12 21.72c2.64 0 4.86-.88 6.48-2.38l-3.16-2.26c-.88.59-2 .94-3.32.94-2.55 0-4.71-1.72-5.48-4.04H3.26v2.33A9.79 9.79 0 0 0 12 21.72Z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M6.52 13.98A5.9 5.9 0 0 1 6.2 12c0-.69.12-1.35.32-1.98V7.69H3.26A9.79 9.79 0 0 0 2.22 12c0 1.57.38 3.06 1.04 4.31l3.26-2.33Z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12 5.98c1.44 0 2.72.49 3.73 1.46l2.8-2.8C16.85 3.08 14.64 2.22 12 2.22a9.79 9.79 0 0 0-8.74 5.47l3.26 2.33C7.29 7.7 9.45 5.98 12 5.98Z"
+                />
+              </svg>
+            </span>
+
+            <span>
+              {authSaving
+                ? "Opening Google..."
+                : "Continue with Google"}
+            </span>
+
+            <span className="mh-google-arrow">→</span>
+          </button>
+
+          <div className="mh-auth-trust">
+            <div className="mh-auth-lock">✓</div>
+            <p>
+              Your Google password is never received or stored by
+              Maza Hishob. Authentication is handled by Google
+              and Supabase. Inactive sessions sign out automatically.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            className="mh-legacy-toggle"
+            onClick={() => {
+              setAuthError("");
+              setShowLegacyLogin((value) => !value);
+            }}
+          >
+            {showLegacyLogin
+              ? "Hide legacy login"
+              : "Use old username login"}
+          </button>
+
+          {showLegacyLogin && (
+            <form
+              className="mh-legacy-form"
+              onSubmit={handleLogin}
+            >
+              <div className="form-group">
+                <label>Username</label>
+                <input
+                  className="form-input"
+                  type="text"
+                  value={username}
+                  onChange={(e) =>
+                    setUsername(e.target.value)
+                  }
+                  placeholder="Old Maza Hishob username"
+                  autoComplete="username"
+                  disabled={authSaving}
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Password</label>
+                <div className="login-password-wrap">
+                  <input
+                    className="form-input"
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) =>
+                      setPassword(e.target.value)
+                    }
+                    placeholder="Password"
+                    autoComplete="current-password"
+                    disabled={authSaving}
+                  />
+
+                  <button
+                    type="button"
+                    className="password-toggle"
+                    onClick={() =>
+                      setShowPassword((value) => !value)
+                    }
+                    disabled={authSaving}
+                  >
+                    {showPassword ? "Hide" : "Show"}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="mh-legacy-submit"
+                disabled={authSaving}
+              >
+                {authSaving
+                  ? "Signing in..."
+                  : "Legacy Login"}
+              </button>
+            </form>
+          )}
+
+          <div className="mh-auth-footer">
+            <strong>© 2026 Maza Hishob. All Rights Reserved.</strong>
+            <span>Money Tracker & Personal Finance Manager</span>
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+}
 
   if (loading) {
     return (
@@ -1970,15 +3900,209 @@ const getPendingEmis = (loan) => {
             ◫
           </button>
 
-          <button
-            className="profile-btn"
-            title="Settings"
-            onClick={() =>
-              setActivePage("settings")
-            }
-          >
-            ⚙
-          </button>
+          <div className="account-menu-wrap">
+            <button
+              type="button"
+              className={`account-menu-trigger ${
+                profileMenuOpen ? "open" : ""
+              }`}
+              aria-haspopup="menu"
+              aria-expanded={profileMenuOpen}
+              onClick={() => {
+                setProfileMessage("");
+                setProfileMenuOpen((value) => !value);
+              }}
+            >
+              <span className="account-avatar">
+                {profilePhotoUrl ? (
+                  <img
+                    src={profilePhotoUrl}
+                    alt="Profile"
+                  />
+                ) : (
+                  <svg
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M12 12.2a4.1 4.1 0 1 0 0-8.2 4.1 4.1 0 0 0 0 8.2Zm7 7.8a7 7 0 0 0-14 0"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                )}
+              </span>
+
+              <span className="account-trigger-copy">
+                <strong>{getProfileDisplayName()}</strong>
+                <small>My Account</small>
+              </span>
+
+              <span className="account-chevron">⌄</span>
+            </button>
+
+            {profileMenuOpen && (
+              <>
+                <button
+                  type="button"
+                  className="account-menu-backdrop"
+                  aria-label="Close account menu"
+                  onClick={() => setProfileMenuOpen(false)}
+                />
+
+                <div
+                  className="account-menu-panel"
+                  role="menu"
+                >
+                  <div className="account-menu-head">
+                    <div className="account-menu-avatar-large">
+                      {profilePhotoUrl ? (
+                        <img
+                          src={profilePhotoUrl}
+                          alt="Profile"
+                        />
+                      ) : (
+                        <svg
+                          viewBox="0 0 24 24"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M12 12.2a4.1 4.1 0 1 0 0-8.2 4.1 4.1 0 0 0 0 8.2Zm7 7.8a7 7 0 0 0-14 0"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                            strokeLinecap="round"
+                          />
+                        </svg>
+                      )}
+                    </div>
+
+                    <div className="account-menu-identity">
+                      <strong>{getProfileDisplayName()}</strong>
+                      <span>{session?.user?.email || "Signed in"}</span>
+                    </div>
+                  </div>
+
+                  <div
+                    className={`account-menu-status-row ${
+                      driveConnected ? "connected" : "disconnected"
+                    }`}
+                  >
+                    <span
+                      className={`account-status-dot ${
+                        driveConnected ? "connected" : "disconnected"
+                      }`}
+                    />
+
+                    <div className="account-drive-status-copy">
+                      <strong>Google Drive Backup</strong>
+                      <span>
+                        {driveConnected
+                          ? "Connected by you"
+                          : "Drive disconnected · Optional"}
+                      </span>
+                    </div>
+
+                    {driveConnected ? (
+                      <button
+                        type="button"
+                        className="account-drive-action disconnect"
+                        onClick={disconnectGoogleDrive}
+                        disabled={driveBusy}
+                      >
+                        Disconnect
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="account-drive-action connect"
+                        onClick={connectGoogleDrive}
+                        disabled={driveBusy}
+                      >
+                        {driveBusy ? "Connecting..." : "Connect"}
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="account-photo-actions">
+                    <label
+                      className={`account-photo-btn ${
+                        profilePhotoBusy ? "disabled" : ""
+                      }`}
+                    >
+                      {profilePhotoBusy
+                        ? "Working..."
+                        : profilePhotoUrl
+                        ? "Replace Photo"
+                        : "Upload Profile Photo"}
+
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        onChange={uploadProfilePhoto}
+                        disabled={profilePhotoBusy}
+                      />
+                    </label>
+
+                    {profilePhotoUrl && (
+                      <button
+                        type="button"
+                        className="account-photo-remove"
+                        onClick={removeProfilePhoto}
+                        disabled={profilePhotoBusy}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+
+                  <p className="account-privacy-note">
+                    Your Google profile photo is not imported automatically.
+                    A photo appears here only if you upload one yourself.
+                  </p>
+
+                  {profileMessage && (
+                    <div className="account-profile-message">
+                      {profileMessage}
+                    </div>
+                  )}
+
+                  <div className="account-menu-divider" />
+
+                  <button
+                    type="button"
+                    className="account-menu-item"
+                    role="menuitem"
+                    onClick={() => {
+                      setProfileMenuOpen(false);
+                      setActivePage("settings");
+                    }}
+                  >
+                    <span>⚙</span>
+                    <div>
+                      <strong>Settings</strong>
+                      <small>Backup, restore and preferences</small>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="account-menu-item signout"
+                    role="menuitem"
+                    onClick={handleLogout}
+                  >
+                    <span>⇥</span>
+                    <div>
+                      <strong>Sign Out</strong>
+                      <small>End this Maza Hishob session</small>
+                    </div>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
@@ -2049,6 +4173,16 @@ const getPendingEmis = (loan) => {
                 Help & Support
               </span>
             </button>
+            <button
+  className="side-item logout-item"
+  onClick={handleLogout}
+>
+  <span className="side-icon">
+    ⇥
+  </span>
+
+  <span>Logout</span>
+</button>
           </div>
         </aside>
 
@@ -2622,67 +4756,91 @@ const getPendingEmis = (loan) => {
               </div>
 
               <div className="filter-bar">
-                <input
-                  className="form-input"
-                  placeholder="🔎 Search category or note..."
-                  value={search}
-                  onChange={(e) =>
-                    setSearch(
-                      e.target.value
-                    )
-                  }
-                />
+  <input
+    className="form-input"
+    placeholder="🔎 Search category or note..."
+    value={search}
+    onChange={(e) =>
+      setSearch(e.target.value)
+    }
+  />
 
-                <select
-                  className="form-input"
-                  value={
-                    filterCategory
-                  }
-                  onChange={(e) =>
-                    setFilterCategory(
-                      e.target.value
-                    )
-                  }
-                >
-                  <option>
-                    All
-                  </option>
+  <select
+    className="form-input"
+    value={filterCategory}
+    onChange={(e) =>
+      setFilterCategory(e.target.value)
+    }
+  >
+    <option value="All">All Categories</option>
 
-                  {categories.map(
-                    (c) => (
-                      <option
-                        key={c}
-                      >
-                        {c}
-                      </option>
-                    )
-                  )}
-                </select>
+    {categories.map((c) => (
+      <option key={c} value={c}>
+        {c}
+      </option>
+    ))}
+  </select>
 
-                <select
-                  className="form-input"
-                  value={filterMode}
-                  onChange={(e) =>
-                    setFilterMode(
-                      e.target.value
-                    )
-                  }
-                >
-                  <option>
-                    All
-                  </option>
+  <select
+    className="form-input"
+    value={filterMode}
+    onChange={(e) =>
+      setFilterMode(e.target.value)
+    }
+  >
+    <option value="All">All Payment Modes</option>
 
-                  {paymentModes.map(
-                    (m) => (
-                      <option
-                        key={m}
-                      >
-                        {m}
-                      </option>
-                    )
-                  )}
-                </select>
-              </div>
+    {paymentModes.map((m) => (
+      <option key={m} value={m}>
+        {m}
+      </option>
+    ))}
+  </select>
+
+  <select
+    className="form-input"
+    value={filterMonth}
+    onChange={(e) => setFilterMonth(e.target.value)}
+  >
+    <option value="All">All Months</option>
+
+    {Array.from(
+      new Set(
+        expenses.map((x) => String(x.date || "").slice(0, 7))
+      )
+    )
+      .filter(Boolean)
+      .sort()
+      .reverse()
+      .map((m) => (
+        <option key={m} value={m}>
+          {m}
+        </option>
+      ))}
+  </select>
+
+  <input
+    className="form-input"
+    type="date"
+    value={filterDate}
+    onChange={(e) => setFilterDate(e.target.value)}
+    title="Filter by exact date"
+  />
+
+  <button
+    type="button"
+    className="secondary-btn"
+    onClick={() => {
+      setSearch("");
+      setFilterCategory("All");
+      setFilterMode("All");
+      setFilterMonth("All");
+      setFilterDate("");
+    }}
+  >
+    Clear Filters
+  </button>
+</div>
 
               <div className="transaction-list">
                 {filteredExpenses.length ? (
@@ -2808,19 +4966,22 @@ const getPendingEmis = (loan) => {
  />
 
                 <Stat
-                  label="Monthly EMI"
-                  value={money(
-                    loans.reduce(
-                      (s, x) =>
-                        s +
-                        Number(
-                          x.emi || 0
-                        ),
-                      0
-                    )
-                  )}
-                  note="Total EMI / month"
-                />
+  label="Monthly EMI"
+  value={money(
+    loans
+      .filter(
+        (x) =>
+          (x.status || "Active") !== "Closed" &&
+          Number(x.outstanding ?? x.amount ?? 0) > 0
+      )
+      .reduce(
+        (s, x) =>
+          s + Number(x.emi || 0),
+        0
+      )
+  )}
+  note="Active loans EMI / month"
+/>
 
                 <Stat
                   label="Outstanding"
@@ -2830,7 +4991,6 @@ const getPendingEmis = (loan) => {
                         s +
                         Number(
                           x.outstanding ??
-                            x.amount ??
                             0
                         ),
                       0
@@ -2841,30 +5001,16 @@ const getPendingEmis = (loan) => {
                 <Stat
   label="Interest Paid"
   value={money(
-    emiPayments.reduce(
-      (s, x) =>
-        s +
-        Number(
-          x.interestPaid || 0
-        ),
-      0
-    )
+    historicalInterestPaid + trackedInterestPaid
   )}
-  note="Total interest paid"
+  note="Historical + tracked"
 />
 <Stat
   label="Principal Paid"
   value={money(
-    emiPayments.reduce(
-      (s, x) =>
-        s +
-        Number(
-          x.principalPaid || 0
-        ),
-      0
-    )
+    historicalPrincipalPaid + trackedPrincipalPaid
   )}
-  note="Total principal paid"
+  note="Historical + tracked"
 />
               </div>
 
@@ -2926,7 +5072,7 @@ const getPendingEmis = (loan) => {
     <strong>
       {money(
         loan.outstanding ??
-          loan.amount
+          0
       )}
     </strong>
   </div>
@@ -2965,6 +5111,13 @@ const getPendingEmis = (loan) => {
       {loan.tenure || 0} months
     </strong>
   </div>
+
+  <div>
+    <span>Original Start</span>
+    <strong>
+      {loan.originalLoanStartDate || "—"}
+    </strong>
+  </div>
   <div>
   <span>
     Principal Paid
@@ -2972,18 +5125,23 @@ const getPendingEmis = (loan) => {
 
   <strong>
     {money(
-      emiPayments
-        .filter(
-          (p) => String(p.loanId) === String(loan.id)
-        )
-        .reduce(
-          (s, p) =>
-            s +
-            Number(
-              p.principalPaid || 0
-            ),
-          0
-        )
+      Number(loan.principalPaidTillDate || 0) +
+        emiPayments
+          .filter(
+            (p) => String(p.loanId) === String(loan.id)
+          )
+          .reduce(
+            (s, p) => s + Number(p.principalPaid || 0),
+            0
+          ) +
+        prepaymentPayments
+          .filter(
+            (p) => String(p.loanId) === String(loan.id)
+          )
+          .reduce(
+            (s, p) => s + Number(p.amount || 0),
+            0
+          )
     )}
   </strong>
 </div>
@@ -2995,18 +5153,15 @@ const getPendingEmis = (loan) => {
 
   <strong>
     {money(
-      emiPayments
-        .filter(
-          (p) => p.loanId === loan.id
-        )
-        .reduce(
-          (s, p) =>
-            s +
-            Number(
-              p.interestPaid || 0
-            ),
-          0
-        )
+      Number(loan.interestPaidTillDate || 0) +
+        emiPayments
+          .filter(
+            (p) => String(p.loanId) === String(loan.id)
+          )
+          .reduce(
+            (s, p) => s + Number(p.interestPaid || 0),
+            0
+          )
     )}
   </strong>
 </div>
@@ -3064,15 +5219,19 @@ const getPendingEmis = (loan) => {
                           </button>
                         </div>
 
-                        {loan.nextEmiDate && (
+{loan.trackingDate && (
   <div className="loan-next">
     <div>
-    Next EMI: {
-  loan.nextEmiDate &&
-  loan.nextEmiDate <= getToday()
-    ? addMonth(loan.nextEmiDate)
-    : loan.nextEmiDate
-}
+      Tracking From: {String(loan.trackingDate).slice(0, 10)}
+    </div>
+  </div>
+)}
+
+{loan.nextEmiDate && (
+  <div className="loan-next">
+    <div>
+      Next EMI:{" "}
+      {String(loan.nextEmiDate).slice(0, 10)}
     </div>
 
     <small
@@ -3268,6 +5427,77 @@ const getPendingEmis = (loan) => {
             </>
           )}
 
+        {activePage === "loans" && (
+          <section className="dashboard-section">
+            <div className="section-heading">
+              <div>
+                <span>HISTORY</span>
+                <h3>Prepayment History</h3>
+              </div>
+            </div>
+
+            {prepaymentPayments.length ? (
+              <div className="transaction-list">
+                {prepaymentPayments.map((p) => (
+                  <div className="transaction-item" key={p.id}>
+                    <div className="transaction-icon">₹</div>
+
+                    <div className="transaction-details">
+                      <strong>{p.loanName}</strong>
+                      <span>
+                        Prepayment • {p.strategy === "emi" ? "Reduce EMI" : "Reduce Tenure"}
+                      </span>
+
+                      <div
+                        style={{
+                          marginTop: "6px",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "2px",
+                          fontSize: "11px",
+                        }}
+                      >
+                        <span>
+                          Outstanding: <strong>{money(p.oldOutstanding)}</strong>
+                          {" → "}
+                          <strong>{money(p.newOutstanding)}</strong>
+                        </span>
+                        <span>
+                          EMI: <strong>{money(p.oldEmi)}</strong>
+                          {" → "}
+                          <strong>{money(p.newEmi)}</strong>
+                        </span>
+                        <span>
+                          Tenure: <strong>{p.oldTenure} months</strong>
+                          {" → "}
+                          <strong>{p.newTenure} months</strong>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="transaction-right">
+                      <strong>{money(p.amount)}</strong>
+                      <span>{p.paidDate}</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="delete-expense"
+                      title="Delete prepayment"
+                      disabled={saving}
+                      onClick={() => deletePrepaymentPayment(p.id)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">No prepayments recorded yet.</p>
+            )}
+          </section>
+        )}
+
         {activePage === "reports" && (
   <>
     <PageHead
@@ -3275,21 +5505,59 @@ const getPendingEmis = (loan) => {
       title="Reports"
       text="Simple view of your money"
     />
+    <div className="report-filters">
+  <div className="filter-group">
+    <label>Month</label>
 
-    <div className="month-report-head">
-      <input
-        type="month"
-        value={month}
-        onChange={(e) =>
-          setMonth(e.target.value)
-        }
-      />
+    <input
+      type="month"
+      className="form-input"
+      value={month}
+      onChange={(e) =>
+        setMonth(e.target.value)
+      }
+    />
+  </div>
 
-      <strong>
-        {monthLabel}
-      </strong>
-    </div>
+  <div className="filter-group">
+  <label>Year</label>
 
+  <select
+    className="form-input"
+    value={month.split("-")[0]}
+    onChange={(e) => {
+      const selectedMonth =
+        month.split("-")[1] || "01";
+
+      setMonth(
+        `${e.target.value}-${selectedMonth}`
+      );
+    }}
+  >
+    {Array.from(
+      { length: 2099 - 2024 + 1 },
+      (_, i) => 2024 + i
+    ).map((year) => (
+      <option
+        key={year}
+        value={year}
+      >
+        {year}
+      </option>
+    ))}
+  </select>
+</div>
+
+  <div className="filter-group">
+    <label>Selected Period</label>
+
+    <strong className="filter-value">
+      {monthLabel}
+    </strong>
+  </div>
+</div>
+
+   
     {/* =========================
         THIS MONTH
     ========================= */}
@@ -3508,86 +5776,348 @@ const getPendingEmis = (loan) => {
               <PageHead
                 eyebrow="PREFERENCES"
                 title="Settings"
-                text="Manage your Maza Hishob data"
+                text="Manage your Maza Hishob data and backups"
               />
 
-              <section className="settings-card">
-                <div>
-                  <h3>
-                    Data Backup
-                  </h3>
+              <section className="settings-card profile-settings-card">
+                <div className="settings-card-copy">
+                  <div className="settings-title-row">
+                    <span className="settings-profile-avatar">
+                      {profilePhotoUrl ? (
+                        <img src={profilePhotoUrl} alt="Profile" />
+                      ) : (
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path
+                            d="M12 12.2a4.1 4.1 0 1 0 0-8.2 4.1 4.1 0 0 0 0 8.2Zm7 7.8a7 7 0 0 0-14 0"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                            strokeLinecap="round"
+                          />
+                        </svg>
+                      )}
+                    </span>
+                    <div>
+                      <h3>Profile</h3>
+                      <span className="settings-subtle">
+                        {session?.user?.email || "Signed-in account"}
+                      </span>
+                    </div>
+                  </div>
 
                   <p>
-                    Download a complete
-                    copy of your
-                    expenses, income,
-                    loans and EMI
-                    history.
+                    Profile photo is optional and uploaded by you. Maza Hishob
+                    does not automatically import your Google account photo.
+                  </p>
+                </div>
+
+                <div className="settings-action-group">
+                  <label
+                    className={`secondary-btn file-btn ${
+                      profilePhotoBusy ? "disabled" : ""
+                    }`}
+                  >
+                    {profilePhotoBusy
+                      ? "Working..."
+                      : profilePhotoUrl
+                      ? "Replace Photo"
+                      : "Upload Photo"}
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      onChange={uploadProfilePhoto}
+                      disabled={profilePhotoBusy}
+                    />
+                  </label>
+
+                  {profilePhotoUrl && (
+                    <button
+                      type="button"
+                      className="secondary-btn"
+                      onClick={removeProfilePhoto}
+                      disabled={profilePhotoBusy}
+                    >
+                      Remove Photo
+                    </button>
+                  )}
+                </div>
+              </section>
+
+              <section className="settings-card session-security-card">
+                <div className="settings-card-copy">
+                  <div className="settings-title-row">
+                    <span className="settings-icon-badge security-icon">⌛</span>
+                    <div>
+                      <h3>Session Security</h3>
+                      <span className="settings-subtle">
+                        5-minute inactivity protection
+                      </span>
+                    </div>
+                  </div>
+
+                  <p>
+                    Maza Hishob automatically signs you out after 5 minutes
+                    without activity and shows a warning 30 seconds before logout.
+                    Your Google password is never received or stored by Maza Hishob.
+                  </p>
+                </div>
+
+                <div className="session-security-status">
+                  <span className="session-security-dot" />
+                  Auto Sign-Out ON
+                </div>
+              </section>
+
+              <section className="settings-card drive-card">
+                <div className="settings-card-copy">
+                  <div className="settings-title-row">
+                    <span className="settings-icon-badge drive-icon">☁</span>
+                    <div>
+                      <h3>Google Drive Backup</h3>
+                      <span
+                        className={`drive-status-badge ${
+                          driveConnected ? "connected" : "disconnected"
+                        }`}
+                      >
+                        {driveConnected
+                          ? "Connected by you · Optional cloud backup"
+                          : "Not Connected · Local backup still available"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <p>
+                    Google Drive is optional and never connects automatically.
+                    Connect it only when you want cloud backup. Backups are saved
+                    in the <strong> Maza Hishob Backups </strong> folder.
+                    Local backup remains available even when Drive is disconnected.
+                  </p>
+                </div>
+
+                <div className="settings-action-group">
+                  {!driveConnected ? (
+                    <button
+                      type="button"
+                      className="primary-btn"
+                      onClick={connectGoogleDrive}
+                      disabled={driveBusy}
+                    >
+                      {driveBusy
+                        ? "Connecting..."
+                        : "☁ Connect Google Drive"}
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        onClick={disconnectGoogleDrive}
+                        disabled={driveBusy}
+                      >
+                        Disconnect Drive
+                      </button>
+
+                      <button
+                        type="button"
+                        className="primary-btn"
+                        onClick={backupToGoogleDrive}
+                        disabled={driveBusy || saving}
+                      >
+                        {driveBusy
+                          ? "Working..."
+                          : "☁ Backup to Drive"}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </section>
+
+              <section className="settings-card drive-restore-card">
+                <div className="settings-card-copy">
+                  <div className="settings-title-row">
+                    <span className="settings-icon-badge restore-icon">↥</span>
+                    <div>
+                      <h3>Restore from Google Drive</h3>
+                      <span className="settings-subtle">
+                        Choose one of your Maza Hishob backups
+                      </span>
+                    </div>
+                  </div>
+
+                  <p>
+                    Restoring replaces only the currently signed-in
+                    user's Supabase data. Your Google Drive backup
+                    file is not deleted.
+                  </p>
+                </div>
+
+                {!driveConnected && (
+                  <div className="drive-disconnected-note">
+                    Google Drive is optional and currently disconnected.
+                    Use Local Backup below, or connect Drive only when you want cloud backup.
+                  </div>
+                )}
+
+                <div className="drive-restore-controls drive-backup-manager">
+                  <div className="drive-manager-head">
+                    <div>
+                      <strong>Cloud Backups</strong>
+                      <span>
+                        {driveConnected
+                          ? `${driveBackups.length} backup${driveBackups.length === 1 ? "" : "s"} loaded`
+                          : "Connect Drive to view backups"}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="secondary-btn"
+                      onClick={() => listDriveBackups()}
+                      disabled={driveBusy || !driveConnected}
+                    >
+                      ↻ Refresh Backups
+                    </button>
+                  </div>
+
+                  {driveConnected && driveBackups.length > 0 ? (
+                    <div className="drive-backup-list">
+                      {driveBackups.map((file) => (
+                        <div
+                          className={`drive-backup-item ${
+                            selectedDriveBackupId === file.id ? "selected" : ""
+                          }`}
+                          key={file.id}
+                          onClick={() => setSelectedDriveBackupId(file.id)}
+                        >
+                          <div className="drive-backup-info">
+                            <strong>{file.name}</strong>
+                            <span>
+                              {file.createdTime
+                                ? new Date(file.createdTime).toLocaleString("en-IN", {
+                                    day: "2-digit",
+                                    month: "short",
+                                    year: "numeric",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })
+                                : "Google Drive backup"}
+                            </span>
+                          </div>
+
+                          <div className="drive-backup-actions">
+                            <button
+                              type="button"
+                              className="secondary-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedDriveBackupId(file.id);
+                                restoreFromGoogleDrive(file.id);
+                              }}
+                              disabled={driveBusy || saving}
+                            >
+                              Restore
+                            </button>
+
+                            <button
+                              type="button"
+                              className="danger-btn drive-delete-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedDriveBackupId(file.id);
+                                deleteSelectedDriveBackup(file.id);
+                              }}
+                              disabled={driveBusy}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : driveConnected ? (
+                    <div className="drive-backup-empty">
+                      No Google Drive backups found. Create a backup first.
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+
+              <section className="settings-card">
+                <div className="settings-card-copy">
+                  <div className="settings-title-row">
+                    <span className="settings-icon-badge local-icon">↓</span>
+                    <div>
+                      <h3>Download Local Backup</h3>
+                      <span className="settings-subtle">
+                        Keep an offline copy on this device
+                      </span>
+                    </div>
+                  </div>
+
+                  <p>
+                    Download a complete JSON copy of your current
+                    financial data.
                   </p>
                 </div>
 
                 <button
-                  className="primary-btn"
+                  className="secondary-btn"
                   onClick={exportData}
+                  disabled={saving}
                 >
-                  ↓ Export Backup
+                  ↓ Download Backup
                 </button>
               </section>
 
               <section className="settings-card">
-                <div>
-                  <h3>
-                    Restore Backup
-                  </h3>
+                <div className="settings-card-copy">
+                  <div className="settings-title-row">
+                    <span className="settings-icon-badge local-restore-icon">↑</span>
+                    <div>
+                      <h3>Restore Local Backup</h3>
+                      <span className="settings-subtle">
+                        Restore a previously downloaded JSON backup
+                      </span>
+                    </div>
+                  </div>
 
                   <p>
-                    Import a previously
-                    exported JSON
-                    backup into this
-                    session.
+                    The selected backup will replace the current
+                    signed-in user's data in Supabase after confirmation.
                   </p>
                 </div>
 
                 <label className="secondary-btn file-btn">
-                  ↑ Import Backup
-
+                  ↑ Choose Backup
                   <input
                     type="file"
                     accept=".json,application/json"
-                    onChange={
-                      importData
-                    }
+                    onChange={importData}
+                    disabled={saving}
                   />
                 </label>
               </section>
 
               <section className="settings-card danger-card">
                 <div>
-                  <h3>
-                    Reset All Data
-                  </h3>
-
+                  <h3>Reset All Data</h3>
                   <p>
-                    This permanently
-                    clears all Maza
-                    Hishob data from
-                    Supabase.
+                    This permanently clears only the currently
+                    signed-in user's Maza Hishob data from Supabase.
                   </p>
                 </div>
 
                 <button
                   className="danger-btn"
-                  disabled={saving}
-                  onClick={
-                    resetAll
-                  }
+                  disabled={saving || driveBusy}
+                  onClick={resetAll}
                 >
                   Reset Data
                 </button>
               </section>
 
               {backupMessage && (
-                <div className="success-note">
+                <div className="success-note backup-status-note">
                   {backupMessage}
                 </div>
               )}
@@ -3595,6 +6125,40 @@ const getPendingEmis = (loan) => {
           )}
         </main>
       </div>
+
+      {sessionWarningOpen && (
+        <div
+          className="session-timeout-modal"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="session-timeout-title"
+        >
+          <div className="session-timeout-backdrop" />
+
+          <div className="session-timeout-card">
+            <div className="session-timeout-icon">⌛</div>
+
+            <span className="eyebrow">SECURITY</span>
+            <h3 id="session-timeout-title">Session expiring soon</h3>
+            <p>
+              For your privacy, Maza Hishob signs you out after
+              5 minutes of inactivity.
+            </p>
+
+            <strong className="session-timeout-countdown">
+              {sessionSecondsLeft}s
+            </strong>
+
+            <button
+              type="button"
+              className="primary-btn session-stay-btn"
+              onClick={() => window.__mhStaySignedIn?.()}
+            >
+              Stay Signed In
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ================= EXPENSE MODAL ================= */}
 
@@ -3674,6 +6238,7 @@ const getPendingEmis = (loan) => {
                       })
                     )
                   }
+                  disabled={!!editing}
                 />
               </Field>
 
@@ -3904,264 +6469,377 @@ const getPendingEmis = (loan) => {
         </Modal>
       )}
 
-      {/* ================= LOAN MODAL ================= */}
+    {/* ================= LOAN MODAL ================= */}
 
-      {modal === "loan" && (
-        <Modal
-          title={
-            editing
-              ? "Edit Loan"
-              : "Add Loan"
-          }
-          eyebrow="LOAN MANAGEMENT"
-          subtitle="Track your loan and EMI details"
-          onClose={closeModal}
-        >
-          <form
-            onSubmit={saveLoan}
-          >
-            <Field label="Loan Type">
-              <select
-                className="form-input"
-                value={
-                  loanForm.loanType
-                }
-                onChange={(e) =>
-                  setLoanForm(
-                    (p) => ({
-                      ...p,
-                      loanType:
-                        e.target
-                          .value,
-                    })
-                  )
-                }
-              >
-                {loanTypes.map(
-                  (x) => (
-                    <option
-                      key={x}
-                    >
-                      {x}
-                    </option>
-                  )
-                )}
-              </select>
-            </Field>
+{modal === "loan" && (
+  <Modal
+    title={
+      editing
+        ? "Edit Loan"
+        : "Add Loan"
+    }
+    eyebrow="LOAN MANAGEMENT"
+    subtitle="Track your loan history and current repayment status"
+    onClose={closeModal}
+  >
+    <form onSubmit={saveLoan}>
 
-            <div className="form-row">
-              <Field label="Loan Name">
-                <input
-                  className="form-input"
-                  required
-                  value={
-                    loanForm.loanName
-                  }
-                  onChange={(e) =>
-                    setLoanForm(
-                      (p) => ({
-                        ...p,
-                        loanName:
-                          e.target
-                            .value,
-                      })
-                    )
-                  }
-                  placeholder="e.g. Home Loan"
-                />
-              </Field>
+      {/* =================================================
+          SECTION 1 — LOAN HISTORY
+          Historical data only
+          No calculation is based on these fields
+      ================================================= */}
 
-              <Field label="Bank / Lender">
-                <input
-                  className="form-input"
-                  value={
-                    loanForm.lender
-                  }
-                  onChange={(e) =>
-                    setLoanForm(
-                      (p) => ({
-                        ...p,
-                        lender:
-                          e.target
-                            .value,
-                      })
-                    )
-                  }
-                  placeholder="e.g. HDFC Bank"
-                />
-              </Field>
-            </div>
+      <div className="form-section">
+        <div className="form-section-heading">
+          <span>SECTION 1</span>
 
-            <div className="form-row">
-              <Field label="Original Loan Amount">
-                <input
-                  className="form-input"
-                  type="number"
-                  required
-                  value={
-                    loanForm.amount
-                  }
-                  onChange={(e) =>
-                    setLoanForm(
-                      (p) => ({
-                        ...p,
-                        amount:
-                          e.target
-                            .value,
-                      })
-                    )
-                  }
-                />
-              </Field>
+          <h4>Loan History</h4>
 
-              <Field label="Outstanding Principal">
-                <input
-                  className="form-input"
-                  type="number"
-                  value={
-                    loanForm.outstanding
-                  }
-                  onChange={(e) =>
-                    setLoanForm(
-                      (p) => ({
-                        ...p,
-                        outstanding:
-                          e.target
-                            .value,
-                      })
-                    )
-                  }
-                />
-              </Field>
-            </div>
+          <p>
+            Enter the original loan details and amounts
+            already paid till date.
+          </p>
+        </div>
 
-            <div className="form-row">
-              <Field label="Interest Rate %">
-                <input
-                  className="form-input"
-                  type="number"
-                  step="0.01"
-                  value={
-                    loanForm.interestRate
-                  }
-                  onChange={(e) =>
-                    setLoanForm(
-                      (p) => ({
-                        ...p,
-                        interestRate:
-                          e.target
-                            .value,
-                      })
-                    )
-                  }
-                />
-              </Field>
+        <Field label="Loan Name">
+          <input
+            className="form-input"
+            required
+            value={loanForm.loanName}
+            onChange={(e) =>
+              setLoanForm((p) => ({
+                ...p,
+                loanName:
+                  e.target.value,
+              }))
+            }
+            placeholder="e.g. Home Loan"
+          />
+        </Field>
 
-              <Field label="Monthly EMI">
-                <input
-                  className="form-input"
-                  type="number"
-                  required
-                  value={
-                    loanForm.emi
-                  }
-                  onChange={(e) =>
-                    setLoanForm(
-                      (p) => ({
-                        ...p,
-                        emi:
-                          e.target
-                            .value,
-                      })
-                    )
-                  }
-                />
-              </Field>
-            </div>
+        <Field label="Bank / Lender Name">
+          <input
+            className="form-input"
+            value={loanForm.lender}
+            onChange={(e) =>
+              setLoanForm((p) => ({
+                ...p,
+                lender:
+                  e.target.value,
+              }))
+            }
+            placeholder="e.g. HDFC Bank"
+          />
+        </Field>
 
-            <div className="form-row">
-              <Field label="Remaining Tenure (months)">
-                <input
-                  className="form-input"
-                  type="number"
-                  value={
-                    loanForm.tenure
-                  }
-                  onChange={(e) =>
-                    setLoanForm(
-                      (p) => ({
-                        ...p,
-                        tenure:
-                          e.target
-                            .value,
-                      })
-                    )
-                  }
-                />
-              </Field>
+        <Field label="Original Loan Amount">
+          <input
+            className="form-input"
+            type="number"
+            min="0"
+            step="0.01"
+            required
+            value={loanForm.amount}
+            onChange={(e) =>
+              setLoanForm((p) => ({
+                ...p,
+                amount:
+                  e.target.value,
+              }))
+            }
+            placeholder="0.00"
+          />
+        </Field>
 
-              <Field label="Next EMI Date">
-                <input
-                  className="form-input"
-                  type="date"
-                  value={
-                    loanForm.nextEmiDate
-                  }
-                  onChange={(e) =>
-                    setLoanForm(
-                      (p) => ({
-                        ...p,
-                        nextEmiDate:
-                          e.target
-                            .value,
-                      })
-                    )
-                  }
-                />
-              </Field>
-            </div>
+        <div className="form-row">
 
-            <Field
-              label={
-                <>
-                  Note{" "}
-                  <span>
-                    Optional
-                  </span>
-                </>
+          <Field label="Principal Paid Till Date">
+            <input
+              className="form-input"
+              type="number"
+              min="0"
+              step="0.01"
+              value={
+                loanForm.principalPaidTillDate ||
+                ""
               }
-            >
-              <input
-                className="form-input"
-                value={
-                  loanForm.note
-                }
-                onChange={(e) =>
-                  setLoanForm(
-                    (p) => ({
-                      ...p,
-                      note:
-                        e.target
-                          .value,
-                    })
-                  )
-                }
-              />
-            </Field>
+              onChange={(e) =>
+                setLoanForm((p) => ({
+                  ...p,
+                  principalPaidTillDate:
+                    e.target.value,
+                }))
+              }
+              placeholder="0.00"
+            />
+          </Field>
 
-            <Actions
-              close={closeModal}
-              save={
-                saving
-                  ? "Saving..."
-                  : editing
-                  ? "Update Loan"
-                  : "Save Loan"
+          <Field label="Interest Paid Till Date">
+            <input
+              className="form-input"
+              type="number"
+              min="0"
+              step="0.01"
+              value={
+                loanForm.interestPaidTillDate ||
+                ""
+              }
+              onChange={(e) =>
+                setLoanForm((p) => ({
+                  ...p,
+                  interestPaidTillDate:
+                    e.target.value,
+                }))
+              }
+              placeholder="0.00"
+            />
+          </Field>
+
+        </div>
+
+        <Field label="Original Loan Start Date">
+          <input
+            className="form-input"
+            type="date"
+            required
+            value={
+              loanForm.originalLoanStartDate ||
+              ""
+            }
+            onChange={(e) =>
+              setLoanForm((p) => ({
+                ...p,
+                originalLoanStartDate:
+                  e.target.value,
+              }))
+            }
+          />
+        </Field>
+      </div>
+
+
+      {/* =================================================
+          SECTION 2 — CURRENT LOAN STATUS
+          All loan calculations are based on this section
+      ================================================= */}
+
+      <div className="form-section">
+
+        <div className="form-section-heading">
+          <span>SECTION 2</span>
+
+          <h4>Current Loan Status</h4>
+
+          <p>
+            These values are used for EMI, interest,
+            principal and remaining tenure calculations.
+          </p>
+        </div>
+
+        <div className="form-row">
+          <Field label="Loan Tracking Date">
+            <input
+              className="form-input"
+              type="date"
+              required
+              value={loanForm.trackingDate || ""}
+              onChange={(e) =>
+                setLoanForm((p) => ({
+                  ...p,
+                  trackingDate: e.target.value,
+                }))
               }
             />
-          </form>
-        </Modal>
-      )}
+          </Field>
+
+          <Field label="Current Outstanding Principal">
+            <input
+              className="form-input"
+              type="number"
+              min="0"
+              step="0.01"
+              required
+              value={loanForm.outstanding}
+              onChange={(e) =>
+                setLoanForm((p) => ({
+                  ...p,
+                  outstanding: e.target.value,
+                }))
+              }
+              placeholder="0.00"
+            />
+          </Field>
+        </div>
+
+        <div className="form-row">
+
+          <Field label="Interest Rate %">
+            <input
+              className="form-input"
+              type="number"
+              min="0"
+              step="0.01"
+              required
+              value={loanForm.interestRate}
+              onChange={(e) =>
+                setLoanForm((p) => ({
+                  ...p,
+                  interestRate:
+                    e.target.value,
+                }))
+              }
+              placeholder="e.g. 8.60"
+            />
+          </Field>
+
+          <Field label="Pending Tenure (Months)">
+            <input
+              className="form-input"
+              type="number"
+              min="0"
+              step="1"
+              required
+              value={loanForm.tenure}
+              onChange={(e) =>
+                setLoanForm((p) => ({
+                  ...p,
+                  tenure:
+                    e.target.value,
+                }))
+              }
+              placeholder="e.g. 80"
+            />
+          </Field>
+
+        </div>
+
+        <div className="form-row">
+
+          <Field label="Monthly EMI">
+            <input
+              className="form-input"
+              type="number"
+              min="0"
+              step="0.01"
+              required
+              value={loanForm.emi}
+              onChange={(e) =>
+                setLoanForm((p) => ({
+                  ...p,
+                  emi:
+                    e.target.value,
+                }))
+              }
+              placeholder="0.00"
+            />
+          </Field>
+
+          <Field label="Next EMI Date">
+            <input
+              className="form-input"
+              type="date"
+              required
+              value={
+                loanForm.nextEmiDate ||
+                ""
+              }
+              onChange={(e) =>
+                setLoanForm((p) => ({
+                  ...p,
+                  nextEmiDate:
+                    e.target.value,
+                }))
+              }
+            />
+          </Field>
+
+        </div>
+
+      </div>
+
+
+      {/* =================================================
+          SECTION 3 — ADDITIONAL INFORMATION
+      ================================================= */}
+
+      <div className="form-section">
+
+        <div className="form-section-heading">
+          <span>SECTION 3</span>
+
+          <h4>Additional Information</h4>
+
+          <p>
+            Optional information about this loan.
+          </p>
+        </div>
+
+        <Field label="Loan Type">
+          <select
+            className="form-input"
+            value={loanForm.loanType}
+            onChange={(e) =>
+              setLoanForm((p) => ({
+                ...p,
+                loanType:
+                  e.target.value,
+              }))
+            }
+          >
+            {loanTypes.map((x) => (
+              <option key={x}>
+                {x}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        <Field
+          label={
+            <>
+              Note{" "}
+              <span>
+                Optional
+              </span>
+            </>
+          }
+        >
+          <input
+            className="form-input"
+            value={loanForm.note}
+            onChange={(e) =>
+              setLoanForm((p) => ({
+                ...p,
+                note:
+                  e.target.value,
+              }))
+            }
+            placeholder="e.g. Home construction loan"
+          />
+        </Field>
+
+      </div>
+
+
+      {/* =================================================
+          ACTIONS
+      ================================================= */}
+
+      <Actions
+        close={closeModal}
+        save={
+          saving
+            ? "Saving..."
+            : editing
+            ? "Update Loan"
+            : "Save Loan"
+        }
+      />
+
+    </form>
+  </Modal>
+)}
 
       {/* ================= PREPAYMENT MODAL ================= */}
 
@@ -4380,63 +7058,35 @@ const getPendingEmis = (loan) => {
                 )}
               </div>
             )}
-            
-<div
-  style={{
-    marginTop: "16px",
-    display: "flex",
-    justifyContent: "center",
-  }}
-  
->
-  <button
-  type="button"
-  className="primary-button"
-  onClick={() => {
-    setPrepayForm((p) => ({
-      ...p,
-      actualPrepayment:
-        p.prepayment || "",
-      prepaymentDate: getToday(),
-      prepaymentNote: "",
-    }));
-  }}
-  >
-    💰 Record Actual Prepayment
-  </button>
-</div>
-            <Actions
-              close={closeModal}
-              save="Close"
-              onlyClose
-            />
-          </Modal>
-        )}<div
-  style={{
-    display: "flex",
-    gap: "10px",
-    justifyContent: "flex-end",
-  }}
->
-  <button
-    type="button"
-    className="btn secondary"
-    onClick={closeModal}
-  >
-    Close
-  </button>
+            <div
+              style={{
+                display: "flex",
+                gap: "10px",
+                justifyContent: "flex-end",
+                marginTop: "16px",
+                flexWrap: "wrap",
+              }}
+            >
+              <button
+                type="button"
+                className="secondary-btn"
+                onClick={closeModal}
+              >
+                Close
+              </button>
 
-  <button
-    type="button"
-    className="btn primary"
-    onClick={applyPrepayment}
-    disabled={!prepayResult || saving}
-  >
-    {saving
-      ? "Applying..."
-      : "Apply Prepayment"}
-  </button>
-</div>
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={applyPrepayment}
+                disabled={!prepayResult || saving}
+              >
+                {saving ? "Applying..." : "Apply Prepayment"}
+              </button>
+            </div>
+          </Modal>
+        )}
+       
     </div>
   );
 }
@@ -4581,17 +7231,26 @@ function Modal({
   children,
 }) {
   return (
-    <div className="expense-modal">
+    <div
+      className="expense-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+    >
+      {/* Background only — NO close action */}
       <div
         className="modal-overlay"
-        onMouseDown={onClose}
+        aria-hidden="true"
       />
 
       <div
         className="modal-card"
-        onMouseDown={(e) =>
-          e.stopPropagation()
-        }
+        onClick={(e) => {
+          e.stopPropagation();
+        }}
+        onMouseDown={(e) => {
+          e.stopPropagation();
+        }}
       >
         <div className="modal-header">
           <div>
@@ -4605,8 +7264,14 @@ function Modal({
           </div>
 
           <button
+            type="button"
             className="modal-close"
-            onClick={onClose}
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
+            aria-label="Close"
+            title="Close"
           >
             ×
           </button>
@@ -4616,55 +7281,6 @@ function Modal({
       </div>
     </div>
   );
-}
-
-/* =========================================================
-   MODAL VISIBILITY FIX
-   Add after the LAST line of App.jsx
-========================================================= */
-
-if (typeof document !== "undefined") {
-  const style = document.createElement("style");
-
-  style.id = "mh-modal-visibility-fix";
-
-  style.textContent = `
-    .expense-modal {
-      position: fixed !important;
-      inset: 0 !important;
-      width: 100% !important;
-      height: 100% !important;
-      display: flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-      z-index: 99999 !important;
-      visibility: visible !important;
-      opacity: 1 !important;
-      pointer-events: auto !important;
-    }
-
-    .modal-overlay {
-      position: fixed !important;
-      inset: 0 !important;
-      width: 100% !important;
-      height: 100% !important;
-      z-index: 99998 !important;
-    }
-
-    .modal-card {
-      position: relative !important;
-      z-index: 99999 !important;
-      visibility: visible !important;
-      opacity: 1 !important;
-      pointer-events: auto !important;
-      max-height: 90vh !important;
-      overflow-y: auto !important;
-    }
-  `;
-
-  if (!document.getElementById("mh-modal-visibility-fix")) {
-    document.head.appendChild(style);
-  }
 }
 
 export default App;

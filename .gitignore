@@ -24,3 +24,14 @@ dist-ssr
 *.sw?
 .env
 .env.local
+# Local Netlify folder
+.netlify
+# Private database backups
+supabase-schema-backup.sql
+supabase-data-backup.sql
+# Private database backups
+supabase-schema-backup.sql
+supabase-data-backup.sql
+
+# Supabase CLI temporary files
+supabase/.temp/
