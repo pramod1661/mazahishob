@@ -5,7 +5,7 @@ import { Browser } from "@capacitor/browser";
 import "./App.css";
 import { supabase } from "./lib/supabase";
 import mazaHishobLogo from "./assets/maza-hishob-logo.png";
-import dashboardSafe from "./assets/dashboard-safe.png";
+import dashboardSafe from "./assets/dashboard-safe.svg";
 
 const categories = [
   "Food",

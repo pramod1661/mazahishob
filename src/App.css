@@ -12523,23 +12523,108 @@ input[type="date"] {
   }
 
   .daily-ledger-page .ledger-day-picker {
+    grid-area: day;
+    width: 48px;
     height: 42px;
     border-radius: 9px;
   }
 
   .daily-ledger-page .ledger-day-picker strong,
   .daily-ledger-page .ledger-date-selectors select {
-    font-size: 14px !important;
+    font-size: 16px !important;
   }
 
   .daily-ledger-page .ledger-date-selectors select {
     min-height: 42px;
-    padding-inline: 7px;
+    padding-inline: 6px;
     border-radius: 8px;
+  }
+
+  /* Keep the mobile date controls readable instead of squeezing five columns. */
+  .daily-ledger-page .ledger-daily-date-card {
+    grid-template-areas:
+      "previous day selectors next"
+      ". balance balance .";
+    grid-template-columns: 34px 48px minmax(0, 1fr) 34px;
+    align-items: start;
+    gap: 8px 6px;
+    min-height: 0;
+    padding: 10px;
+  }
+
+  .daily-ledger-page .ledger-daily-date-card > .ledger-period-arrow:first-child {
+    grid-area: previous;
+  }
+
+  .daily-ledger-page .ledger-daily-date-card > .ledger-period-arrow:last-child {
+    grid-area: next;
+  }
+
+  .daily-ledger-page .ledger-date-selectors {
+    grid-area: selectors;
+    width: 100%;
+  }
+
+  .daily-ledger-page .ledger-date-selectors > div {
+    grid-template-columns: minmax(0, 1fr) 66px;
+    gap: 6px;
+  }
+
+  .daily-ledger-page .ledger-date-selectors > span {
+    margin-top: 2px;
+    font-size: 10px;
+  }
+
+  .daily-ledger-page .ledger-date-balance {
+    grid-area: balance;
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .daily-ledger-page .ledger-date-balance span {
+    font-size: 10px;
+  }
+
+  .daily-ledger-page .ledger-date-balance strong {
+    font-size: 14px;
   }
 
   .session-timeout-card {
     padding: 24px 18px 20px;
     border-radius: 20px;
+  }
+}
+
+@media (max-width: 360px) {
+  .daily-ledger-page .ledger-daily-date-card {
+    grid-template-areas:
+      "previous day balance next"
+      "selectors selectors selectors selectors";
+    grid-template-columns: 32px 46px minmax(0, 1fr) 32px;
+    gap: 8px 6px;
+    padding: 9px 7px;
+  }
+
+  .daily-ledger-page .ledger-period-arrow {
+    width: 32px;
+  }
+
+  .daily-ledger-page .ledger-day-picker {
+    width: 46px;
+  }
+
+  .daily-ledger-page .ledger-date-selectors > div {
+    grid-template-columns: minmax(0, 1fr) 76px;
+  }
+
+  .daily-ledger-page .ledger-date-balance {
+    align-self: center;
+  }
+
+  .daily-ledger-page .ledger-date-balance span {
+    display: none;
   }
 }
