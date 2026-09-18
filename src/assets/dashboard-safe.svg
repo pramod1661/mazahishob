@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 240" role="img" aria-labelledby="title desc">
+  <title id="title">Secure money vault</title>
+  <desc id="desc">A refined dark vault with warm gold details.</desc>
+  <defs>
+    <linearGradient id="case" x1="60" y1="28" x2="280" y2="214" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#42586a"/>
+      <stop offset="0.45" stop-color="#203546"/>
+      <stop offset="1" stop-color="#0b1d2b"/>
+    </linearGradient>
+    <linearGradient id="door" x1="92" y1="55" x2="253" y2="196" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#263f52"/>
+      <stop offset="1" stop-color="#0c2131"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="135" y1="74" x2="226" y2="171" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffe39a"/>
+      <stop offset="0.4" stop-color="#dca83d"/>
+      <stop offset="1" stop-color="#8d5d15"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="translate(178 121) rotate(90) scale(91 112)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#efbd55" stop-opacity="0.26"/>
+      <stop offset="1" stop-color="#efbd55" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="28" y="12" width="280" height="228" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="12" stdDeviation="10" flood-color="#020b12" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <ellipse cx="178" cy="126" rx="124" ry="102" fill="url(#glow)"/>
+  <g filter="url(#shadow)">
+    <rect x="51" y="25" width="229" height="184" rx="25" fill="url(#case)" stroke="#647888" stroke-width="3"/>
+    <rect x="65" y="39" width="201" height="156" rx="17" fill="#071a28" stroke="#182f40" stroke-width="3"/>
+    <rect x="76" y="49" width="173" height="136" rx="14" fill="url(#door)" stroke="#506475" stroke-width="2.5"/>
+    <path d="M88 63h149" stroke="#728493" stroke-opacity="0.34" stroke-width="2"/>
+    <path d="M88 173h149" stroke="#06131e" stroke-opacity="0.72" stroke-width="3"/>
+
+    <circle cx="166" cy="117" r="51" fill="#091b29" stroke="url(#gold)" stroke-width="6"/>
+    <circle cx="166" cy="117" r="40" fill="#162c3c" stroke="#617383" stroke-width="2"/>
+    <circle cx="166" cy="117" r="13" fill="url(#gold)"/>
+    <circle cx="166" cy="117" r="5" fill="#fff1bf"/>
+
+    <g fill="none" stroke="url(#gold)" stroke-linecap="round" stroke-width="7">
+      <path d="M166 77v27"/>
+      <path d="M166 130v27"/>
+      <path d="M126 117h27"/>
+      <path d="M179 117h27"/>
+      <path d="m138 89 19 19"/>
+      <path d="m175 126 19 19"/>
+      <path d="m194 89-19 19"/>
+      <path d="m157 126-19 19"/>
+    </g>
+
+    <rect x="225" y="91" width="11" height="52" rx="5.5" fill="url(#gold)"/>
+    <circle cx="230.5" cy="86" r="7" fill="#f2c968"/>
+    <circle cx="230.5" cy="148" r="7" fill="#a8731d"/>
+
+    <path d="M69 209h31v10H61c-5 0-9-4-9-9v-13c4 7 9 11 17 12Z" fill="#091a27"/>
+    <path d="M263 209h-31v10h39c5 0 9-4 9-9v-13c-4 7-9 11-17 12Z" fill="#091a27"/>
+  </g>
+</svg>
