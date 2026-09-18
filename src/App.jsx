@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import { App as CapacitorApp } from "@capacitor/app";
+import { Capacitor } from "@capacitor/core";
+import { Browser } from "@capacitor/browser";
 import "./App.css";
 import { supabase } from "./lib/supabase";
 import mazaHishobLogo from "./assets/maza-hishob-logo.png";
+import dashboardSafe from "./assets/dashboard-safe.png";
 
 const categories = [
   "Food",
@@ -39,6 +43,21 @@ const paymentModes = [
   "Bank Transfer",
 ];
 
+const dashboardMonths = [
+  ["01", "January"],
+  ["02", "February"],
+  ["03", "March"],
+  ["04", "April"],
+  ["05", "May"],
+  ["06", "June"],
+  ["07", "July"],
+  ["08", "August"],
+  ["09", "September"],
+  ["10", "October"],
+  ["11", "November"],
+  ["12", "December"],
+];
+
 const getToday = () => {
   const d = new Date();
 
@@ -56,6 +75,184 @@ const money = (n) =>
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
+
+const NATIVE_AUTH_REDIRECT = "com.mazahishob.app://auth/callback";
+
+const INACTIVITY_LIMIT_MS = 5 * 60 * 1000;
+const INACTIVITY_WARNING_MS = 30 * 1000;
+const LAST_ACTIVITY_STORAGE_KEY = "mh_last_activity_at_v1";
+
+const readLastActivityAt = () => {
+  try {
+    const value = Number(localStorage.getItem(LAST_ACTIVITY_STORAGE_KEY));
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  } catch {
+    return 0;
+  }
+};
+
+const writeLastActivityAt = (value = Date.now()) => {
+  try {
+    localStorage.setItem(LAST_ACTIVITY_STORAGE_KEY, String(value));
+  } catch {
+    // The in-memory timer still protects the current app session.
+  }
+  return value;
+};
+
+const clearLastActivityAt = () => {
+  try {
+    localStorage.removeItem(LAST_ACTIVITY_STORAGE_KEY);
+  } catch {
+    // Nothing else is required when storage is unavailable.
+  }
+};
+
+const getOAuthRedirectUrl = () =>
+  Capacitor.isNativePlatform()
+    ? NATIVE_AUTH_REDIRECT
+    : `${window.location.origin}/`;
+
+
+function DashboardIcon({ type }) {
+  const common = {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.8,
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    "aria-hidden": true,
+  };
+
+  if (type === "expense") {
+    return (
+      <svg {...common}>
+        <path d="M4 7.5h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-8a3 3 0 0 1 3-3h11" />
+        <path d="M17 11.5h4v4h-4a2 2 0 0 1 0-4Z" />
+        <circle cx="17.8" cy="13.5" r=".65" fill="currentColor" stroke="none" />
+      </svg>
+    );
+  }
+
+  if (type === "income") {
+    return (
+      <svg {...common}>
+        <path d="M4 7.5h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-8a3 3 0 0 1 3-3h11" />
+        <path d="M17 11.5h4v4h-4a2 2 0 0 1 0-4Z" />
+        <path d="M12 3v7M9.5 5.5 12 3l2.5 2.5" />
+      </svg>
+    );
+  }
+
+  if (type === "loan") {
+    return (
+      <svg {...common}>
+        <path d="M4 7h16M6 7V5.5L12 3l6 2.5V7" />
+        <path d="M6 18h12M7.5 9.5v6M12 9.5v6M16.5 9.5v6" />
+        <path d="M4.5 18v2h15v-2" />
+      </svg>
+    );
+  }
+
+  if (type === "emi") {
+    return (
+      <svg {...common}>
+        <rect x="3.5" y="6" width="17" height="12" rx="2" />
+        <path d="M3.5 10h17M8 14h3" />
+        <circle cx="17" cy="14" r="1.3" />
+      </svg>
+    );
+  }
+
+  if (type === "reports") {
+    return (
+      <svg {...common}>
+        <path d="M5 19V11M10 19V6M15 19v-9M20 19V3" />
+      </svg>
+    );
+  }
+
+  if (type === "bank") {
+    return (
+      <svg {...common}>
+        <path d="M3 9h18M5 9V7l7-4 7 4v2M5 19h14M6.5 11.5v5M12 11.5v5M17.5 11.5v5" />
+      </svg>
+    );
+  }
+
+  if (type === "cart") {
+    return (
+      <svg {...common}>
+        <path d="M3 4h2l2.2 10.2h9.7L20 7H7" />
+        <circle cx="9" cy="19" r="1.4" />
+        <circle cx="17" cy="19" r="1.4" />
+      </svg>
+    );
+  }
+
+  if (type === "fuel") {
+    return (
+      <svg {...common}>
+        <path d="M6 3h8v18H6zM8 6h4M14 8h2l2 2v6.5a1.5 1.5 0 0 0 3 0V8l-2-2" />
+      </svg>
+    );
+  }
+
+  if (type === "bolt") {
+    return (
+      <svg {...common}>
+        <path d="m13 2-7 11h6l-1 9 7-12h-6z" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg {...common}>
+      <circle cx="12" cy="12" r="8" />
+    </svg>
+  );
+}
+
+function PrivacyIcon({ visible }) {
+  return visible ? (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M2.7 12s3.4-6 9.3-6 9.3 6 9.3 6-3.4 6-9.3 6-9.3-6-9.3-6Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle
+        cx="12"
+        cy="12"
+        r="2.7"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
+    </svg>
+  ) : (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M3 3l18 18"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <path
+        d="M3 12s3.4-6 9-6c1.3 0 2.5.3 3.6.8M21 12s-3.4 6-9 6c-1.3 0-2.5-.3-3.6-.8"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
 
 function App() {
   const [activePage, setActivePage] = useState("home");
@@ -75,6 +272,12 @@ function App() {
   const [authSaving, setAuthSaving] = useState(false);
   const [showLegacyLogin, setShowLegacyLogin] = useState(false);
   const [month, setMonth] = useState(getMonthKey(getToday()));
+  const [amountsVisible, setAmountsVisible] = useState(true);
+  const [lifetimeAmountsVisible, setLifetimeAmountsVisible] = useState(true);
+  const [expenseSuggestionOpen, setExpenseSuggestionOpen] = useState(false);
+  const [driveAccessToken, setDriveAccessToken] = useState(() =>
+    sessionStorage.getItem("mh_drive_access_token_v2") || ""
+  );
 
   const [expenses, setExpenses] = useState([]);
   const [incomes, setIncomes] = useState([]);
@@ -93,6 +296,56 @@ function App() {
   const [filterMode, setFilterMode] = useState("All");
   const [filterMonth, setFilterMonth] = useState("All");
   const [filterDate, setFilterDate] = useState("");
+  const [expenseLedgerView, setExpenseLedgerView] = useState("daily");
+  const [expenseLedgerDate, setExpenseLedgerDate] = useState(getToday());
+  const [ledgerComposerOpen, setLedgerComposerOpen] = useState(false);
+  const [ledgerEntryType, setLedgerEntryType] = useState("expense");
+  const [ledgerSuggestionOpen, setLedgerSuggestionOpen] = useState(false);
+  const [ledgerPeriodPicker, setLedgerPeriodPicker] = useState(null);
+  const [ledgerPickerMonth, setLedgerPickerMonth] = useState(
+    String(new Date().getMonth() + 1).padStart(2, "0")
+  );
+  const [ledgerPickerYear, setLedgerPickerYear] = useState(
+    new Date().getFullYear()
+  );
+  const [ledgerQuickForm, setLedgerQuickForm] = useState({
+    name: "Food",
+    amount: "",
+    description: "",
+    paymentMode: "UPI",
+  });
+
+  useEffect(() => {
+    if (activePage !== "expenses") {
+      setLedgerComposerOpen(false);
+      setLedgerSuggestionOpen(false);
+      setLedgerPeriodPicker(null);
+    }
+  }, [activePage]);
+
+  useEffect(() => {
+    if (!ledgerPeriodPicker) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setLedgerPeriodPicker(null);
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [ledgerPeriodPicker]);
+
+  // Common period filter used consistently across Home, Expenses, Income and Reports.
+  const [periodType, setPeriodType] = useState("monthly");
+  const [filterYear, setFilterYear] = useState(
+    String(new Date().getFullYear())
+  );
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
 
   const [selectedLoan, setSelectedLoan] = useState(null);
   const [backupMessage, setBackupMessage] = useState("");
@@ -109,11 +362,74 @@ function App() {
   const [profilePhotoBusy, setProfilePhotoBusy] = useState(false);
   const [profileMessage, setProfileMessage] = useState("");
 
+  /* =========================
+     LIVE USER PRESENCE
+     Control Center reads this Supabase Realtime channel.
+     No finance data is sent.
+  ========================= */
+  useEffect(() => {
+    if (!session?.user?.id) return undefined;
+
+    const user = session.user;
+    const metadata = user.user_metadata || {};
+
+    console.log("PRESENCE START - USER:", user.id);
+
+    const presenceChannel = supabase.channel(
+      "maza-hishob-online",
+      {
+        config: {
+          presence: {
+            key: user.id,
+          },
+        },
+      }
+    );
+
+    presenceChannel.subscribe(async (status, error) => {
+      console.log("PRESENCE STATUS:", status);
+
+      if (error) {
+        console.error("PRESENCE CHANNEL ERROR:", error);
+      }
+
+      if (status !== "SUBSCRIBED") return;
+
+      try {
+        const trackStatus = await presenceChannel.track({
+          user_id: user.id,
+          email: user.email || "",
+          username:
+            metadata.full_name ||
+            metadata.name ||
+            metadata.username ||
+            user.email?.split("@")[0] ||
+            "User",
+          online_at: new Date().toISOString(),
+          platform: Capacitor.isNativePlatform()
+            ? "Android"
+            : "Web",
+        });
+
+        console.log("PRESENCE TRACK RESULT:", trackStatus);
+      } catch (error) {
+        console.error("PRESENCE TRACK ERROR:", error);
+      }
+    });
+
+    return () => {
+      console.log("PRESENCE STOP - USER:", user.id);
+      presenceChannel.untrack().catch(() => {});
+      supabase.removeChannel(presenceChannel);
+    };
+  }, [session?.user?.id]);
+
+
   const [expenseForm, setExpenseForm] = useState({
     amount: "",
     category: "Food",
     date: getToday(),
-    paymentMode: "Cash",
+    paymentMode: "UPI",
     note: "",
   });
 
@@ -184,6 +500,159 @@ function App() {
   });
 
   /* =========================
+     CAPACITOR OAUTH CALLBACK
+  ========================= */
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) {
+      return undefined;
+    }
+
+    let listenerHandle;
+    let cancelled = false;
+
+    const completeNativeOAuth = async (url) => {
+      if (!url || !url.startsWith(NATIVE_AUTH_REDIRECT)) {
+        return;
+      }
+
+      try {
+        try {
+          await Browser.close();
+        } catch (browserCloseError) {
+          console.warn("OAuth browser close skipped:", browserCloseError);
+        }
+
+        const callbackUrl = new URL(url);
+        const queryParams = callbackUrl.searchParams;
+        const hashParams = new URLSearchParams(
+          callbackUrl.hash.replace(/^#/, "")
+        );
+
+        const oauthError =
+          queryParams.get("error_description") ||
+          queryParams.get("error") ||
+          hashParams.get("error_description") ||
+          hashParams.get("error");
+
+        if (oauthError) throw new Error(oauthError);
+
+        const code = queryParams.get("code");
+        const accessToken = hashParams.get("access_token");
+        const refreshToken = hashParams.get("refresh_token");
+
+        // Supabase implicit OAuth returns Google provider tokens
+        // directly in the callback URL fragment. These tokens are
+        // intentionally not persisted by Supabase, so capture them now.
+        const callbackProviderToken =
+          hashParams.get("provider_token") ||
+          queryParams.get("provider_token") ||
+          "";
+
+        const callbackProviderRefreshToken =
+          hashParams.get("provider_refresh_token") ||
+          queryParams.get("provider_refresh_token") ||
+          "";
+
+        let oauthSession = null;
+
+        if (code) {
+          const { data, error } =
+            await supabase.auth.exchangeCodeForSession(code);
+
+          if (error) throw error;
+          oauthSession = data?.session || null;
+        } else if (accessToken && refreshToken) {
+          const { data, error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+
+          if (error) throw error;
+          oauthSession = data?.session || null;
+        } else {
+          throw new Error(
+            "Google login callback did not contain authentication details."
+          );
+        }
+
+        const pendingDriveConnect =
+          sessionStorage.getItem("mh_drive_connect_pending_v2") === "1";
+
+        const providerToken =
+          callbackProviderToken ||
+          oauthSession?.provider_token ||
+          "";
+
+        if (callbackProviderRefreshToken) {
+          sessionStorage.setItem(
+            "mh_drive_refresh_token_v2",
+            callbackProviderRefreshToken
+          );
+        }
+
+        if (pendingDriveConnect && providerToken) {
+          sessionStorage.setItem(
+            "mh_drive_access_token_v2",
+            providerToken
+          );
+          sessionStorage.setItem(
+            "mh_drive_connected_v2",
+            "1"
+          );
+          sessionStorage.removeItem(
+            "mh_drive_connect_pending_v2"
+          );
+
+          setDriveAccessToken(providerToken);
+          setDriveConnected(true);
+          setBackupMessage(
+            "Google Drive connected successfully."
+          );
+        }
+
+        if (!cancelled) {
+          setAuthError("");
+          setAuthSaving(false);
+          setDriveBusy(false);
+        }
+      } catch (error) {
+        console.error("Native OAuth callback error:", error);
+        if (!cancelled) {
+          sessionStorage.removeItem("mh_drive_connect_pending_v2");
+          setAuthError(error?.message || "Unable to complete Google login.");
+          setBackupMessage(
+            error?.message || "Unable to complete Google authentication."
+          );
+          setAuthSaving(false);
+          setDriveBusy(false);
+        }
+      }
+    };
+
+    const setupDeepLinkListener = async () => {
+      listenerHandle = await CapacitorApp.addListener(
+        "appUrlOpen",
+        ({ url }) => completeNativeOAuth(url)
+      );
+
+      const launch = await CapacitorApp.getLaunchUrl();
+      if (launch?.url) {
+        await completeNativeOAuth(launch.url);
+      }
+    };
+
+    setupDeepLinkListener().catch((error) => {
+      console.error("Unable to initialise app deep link listener:", error);
+    });
+
+    return () => {
+      cancelled = true;
+      listenerHandle?.remove();
+    };
+  }, []);
+
+  /* =========================
    LOAD DATA FROM SUPABASE
 ========================= */
 
@@ -202,7 +671,17 @@ useEffect(() => {
     const explicitlyConnected =
       sessionStorage.getItem("mh_drive_connected_v2") === "1";
 
-    const hasDriveToken = Boolean(nextSession?.provider_token);
+    const storedDriveToken =
+      sessionStorage.getItem("mh_drive_access_token_v2") || "";
+
+    const currentDriveToken =
+      nextSession?.provider_token || storedDriveToken || driveAccessToken;
+
+    const hasDriveToken = Boolean(currentDriveToken);
+
+    if (currentDriveToken && !driveAccessToken) {
+      setDriveAccessToken(currentDriveToken);
+    }
 
     /*
      * Google Drive is NEVER auto-connected just because the user
@@ -227,6 +706,8 @@ useEffect(() => {
 
     if (!hasDriveToken) {
       sessionStorage.removeItem("mh_drive_connected_v2");
+      sessionStorage.removeItem("mh_drive_access_token_v2");
+      setDriveAccessToken("");
     }
 
     setDriveConnected(false);
@@ -252,6 +733,14 @@ useEffect(() => {
     (_event, nextSession) => {
       console.log("AUTH EVENT:", _event);
       console.log("AUTH SESSION:", nextSession);
+
+      // Initialise only a genuinely new login. A repeated SIGNED_IN event on
+      // tab focus must not reset an already-running inactivity deadline.
+      if (_event === "SIGNED_IN" && nextSession && !readLastActivityAt()) {
+        writeLastActivityAt();
+      } else if (_event === "SIGNED_OUT") {
+        clearLastActivityAt();
+      }
 
       if (mounted) {
         setSession(nextSession);
@@ -283,12 +772,15 @@ const handleGoogleLogin = async () => {
   sessionStorage.removeItem("mh_drive_connected_v2");
 
   try {
-    const redirectTo = `${window.location.origin}/`;
+    const redirectTo = getOAuthRedirectUrl();
 
-    const { error } = await supabase.auth.signInWithOAuth({
+    const isNative = Capacitor.isNativePlatform();
+
+    const { data, error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
         redirectTo,
+        skipBrowserRedirect: isNative,
         queryParams: {
           prompt: "select_account",
         },
@@ -296,14 +788,23 @@ const handleGoogleLogin = async () => {
     });
 
     if (error) throw error;
+
+    if (isNative) {
+      if (!data?.url) {
+        throw new Error("Unable to open Google sign-in.");
+      }
+
+      await Browser.open({
+        url: data.url,
+        presentationStyle: "popover",
+      });
+    }
   } catch (error) {
     console.error("Google login error:", error);
-
     setAuthError(
       error?.message ||
         "Unable to continue with Google. Please try again."
     );
-
     setAuthSaving(false);
   }
 };
@@ -320,21 +821,40 @@ const connectGoogleDrive = async () => {
     }
 
     sessionStorage.setItem("mh_drive_connect_pending_v2", "1");
+    sessionStorage.removeItem("mh_drive_access_token_v2");
+    sessionStorage.removeItem("mh_drive_refresh_token_v2");
+    setDriveAccessToken("");
 
-    const redirectTo = `${window.location.origin}/`;
+    const redirectTo = getOAuthRedirectUrl();
 
-    const { error } = await supabase.auth.signInWithOAuth({
+    const isNative = Capacitor.isNativePlatform();
+
+    const { data, error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
         redirectTo,
+        skipBrowserRedirect: isNative,
         scopes: GOOGLE_DRIVE_SCOPE,
         queryParams: {
+          access_type: "offline",
           prompt: "consent",
+          include_granted_scopes: "true",
         },
       },
     });
 
     if (error) throw error;
+
+    if (isNative) {
+      if (!data?.url) {
+        throw new Error("Unable to open Google Drive authorization.");
+      }
+
+      await Browser.open({
+        url: data.url,
+        presentationStyle: "popover",
+      });
+    }
   } catch (error) {
     sessionStorage.removeItem("mh_drive_connect_pending_v2");
     console.error("Google Drive connect error:", error);
@@ -353,6 +873,9 @@ const disconnectGoogleDrive = () => {
   setSelectedDriveBackupId("");
   sessionStorage.removeItem("mh_drive_connect_pending_v2");
   sessionStorage.removeItem("mh_drive_connected_v2");
+  sessionStorage.removeItem("mh_drive_access_token_v2");
+  sessionStorage.removeItem("mh_drive_refresh_token_v2");
+  setDriveAccessToken("");
   setBackupMessage(
     "Google Drive disconnected from Maza Hishob for this session. Local backup remains available."
   );
@@ -742,6 +1265,7 @@ const handleCreateUser = async (e) => {
 ========================= */
 
 const clearSignedInState = () => {
+  clearLastActivityAt();
   setSession(null);
   setExpenses([]);
   setIncomes([]);
@@ -758,6 +1282,9 @@ const clearSignedInState = () => {
   setSessionSecondsLeft(30);
   sessionStorage.removeItem("mh_drive_connect_pending_v2");
   sessionStorage.removeItem("mh_drive_connected_v2");
+  sessionStorage.removeItem("mh_drive_access_token_v2");
+  sessionStorage.removeItem("mh_drive_refresh_token_v2");
+  setDriveAccessToken("");
   setActivePage("home");
   setLoading(false);
 };
@@ -773,84 +1300,164 @@ const handleLogout = async () => {
 
 /* =========================
    5-MINUTE INACTIVITY AUTO LOGOUT
-   Warning starts after 4m 30s.
+   Works across web tabs and after an Android app resume.
 ========================= */
 
 useEffect(() => {
   if (!session?.user?.id) return undefined;
 
-  const WARNING_AFTER_MS = 4.5 * 60 * 1000;
-  const LOGOUT_AFTER_MS = 5 * 60 * 1000;
-
+  let lastActivityAt = readLastActivityAt() || writeLastActivityAt();
   let warningTimer;
   let logoutTimer;
   let countdownTimer;
+  let nativeAppStateListener;
+  let disposed = false;
+  let logoutInProgress = false;
+  let lastHandledActivityAt = 0;
 
   const clearTimers = () => {
-    clearTimeout(warningTimer);
-    clearTimeout(logoutTimer);
-    clearInterval(countdownTimer);
+    window.clearTimeout(warningTimer);
+    window.clearTimeout(logoutTimer);
+    window.clearInterval(countdownTimer);
   };
 
-  const autoLogout = async () => {
+  const getLatestActivityAt = () => {
+    const storedActivityAt = readLastActivityAt();
+    if (storedActivityAt > lastActivityAt) lastActivityAt = storedActivityAt;
+    return lastActivityAt;
+  };
+
+  const getRemainingMs = () =>
+    INACTIVITY_LIMIT_MS - (Date.now() - getLatestActivityAt());
+
+  const performAutoLogout = async () => {
+    if (logoutInProgress || disposed) return;
+
+    const remainingMs = getRemainingMs();
+    if (remainingMs > 0) {
+      scheduleTimers();
+      return;
+    }
+
+    logoutInProgress = true;
     clearTimers();
 
     try {
       await supabase.auth.signOut();
+    } catch (error) {
+      console.error("Automatic logout error:", error);
     } finally {
-      clearSignedInState();
-      setAuthError(
-        "You were signed out after 5 minutes of inactivity. Sign in again to continue."
-      );
+      if (!disposed) {
+        clearSignedInState();
+        setAuthError(
+          "Session expired after 5 minutes of inactivity. Please sign in again."
+        );
+      }
     }
   };
 
+  const updateCountdown = () => {
+    const remainingMs = getRemainingMs();
+    const remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+
+    setSessionSecondsLeft(remainingSeconds);
+    if (remainingMs <= 0) performAutoLogout();
+  };
+
   const showWarning = () => {
-    setSessionSecondsLeft(30);
+    if (disposed) return;
+
+    const remainingMs = getRemainingMs();
+    if (remainingMs <= 0) {
+      performAutoLogout();
+      return;
+    }
+
     setSessionWarningOpen(true);
-
-    countdownTimer = window.setInterval(() => {
-      setSessionSecondsLeft((current) => Math.max(current - 1, 0));
-    }, 1000);
+    updateCountdown();
+    window.clearInterval(countdownTimer);
+    countdownTimer = window.setInterval(updateCountdown, 1000);
   };
 
-  const resetInactivityTimer = () => {
+  function scheduleTimers() {
     clearTimers();
+
+    const remainingMs = getRemainingMs();
+    if (remainingMs <= 0) {
+      performAutoLogout();
+      return;
+    }
+
     setSessionWarningOpen(false);
-    setSessionSecondsLeft(30);
+    setSessionSecondsLeft(Math.ceil(INACTIVITY_WARNING_MS / 1000));
 
-    warningTimer = window.setTimeout(
-      showWarning,
-      WARNING_AFTER_MS
-    );
+    const warningDelay = remainingMs - INACTIVITY_WARNING_MS;
+    if (warningDelay <= 0) showWarning();
+    else warningTimer = window.setTimeout(showWarning, warningDelay);
 
-    logoutTimer = window.setTimeout(
-      autoLogout,
-      LOGOUT_AFTER_MS
-    );
+    logoutTimer = window.setTimeout(performAutoLogout, remainingMs + 50);
+  }
+
+  const markActivity = () => {
+    const now = Date.now();
+
+    // Avoid excessive storage writes during continuous scrolling.
+    if (now - lastHandledActivityAt < 750) return;
+    lastHandledActivityAt = now;
+    lastActivityAt = writeLastActivityAt(now);
+    scheduleTimers();
   };
 
-  const activityEvents = [
-    "pointerdown",
-    "keydown",
-    "touchstart",
-    "scroll",
-  ];
+  const checkAfterResume = () => {
+    if (getRemainingMs() <= 0) performAutoLogout();
+    else markActivity();
+  };
 
-  const onActivity = () => resetInactivityTimer();
+  const onVisibilityChange = () => {
+    if (document.visibilityState === "visible") checkAfterResume();
+  };
+
+  const onStorage = (event) => {
+    if (event.key !== LAST_ACTIVITY_STORAGE_KEY || !event.newValue) return;
+    lastActivityAt = Number(event.newValue) || lastActivityAt;
+    scheduleTimers();
+  };
+
+  const activityEvents = ["pointerdown", "keydown", "touchstart", "scroll"];
 
   activityEvents.forEach((eventName) => {
-    window.addEventListener(eventName, onActivity, { passive: true });
+    window.addEventListener(eventName, markActivity, { passive: true });
   });
+  window.addEventListener("focus", checkAfterResume);
+  window.addEventListener("pageshow", checkAfterResume);
+  window.addEventListener("storage", onStorage);
+  document.addEventListener("visibilitychange", onVisibilityChange);
 
-  window.__mhStaySignedIn = resetInactivityTimer;
-  resetInactivityTimer();
+  if (Capacitor.isNativePlatform()) {
+    CapacitorApp.addListener("appStateChange", ({ isActive }) => {
+      if (isActive) checkAfterResume();
+    }).then((listener) => {
+      if (disposed) listener.remove();
+      else nativeAppStateListener = listener;
+    }).catch((error) => {
+      console.error("Unable to monitor native app activity:", error);
+    });
+  }
+
+  window.__mhStaySignedIn = markActivity;
+  scheduleTimers();
 
   return () => {
+    disposed = true;
     clearTimers();
     activityEvents.forEach((eventName) => {
-      window.removeEventListener(eventName, onActivity);
+      window.removeEventListener(eventName, markActivity);
     });
+    window.removeEventListener("focus", checkAfterResume);
+    window.removeEventListener("pageshow", checkAfterResume);
+    window.removeEventListener("storage", onStorage);
+    document.removeEventListener("visibilitychange", onVisibilityChange);
+    nativeAppStateListener?.remove();
     delete window.__mhStaySignedIn;
   };
 }, [session?.user?.id]);
@@ -859,6 +1466,31 @@ useEffect(() => {
 /* =========================
    LOAD ALL DATA
 ========================= */
+
+const SUPABASE_PAGE_SIZE = 500;
+
+const fetchAllUserRows = async (table, userId) => {
+  const allRows = [];
+
+  for (let from = 0; ; from += SUPABASE_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from(table)
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, from + SUPABASE_PAGE_SIZE - 1);
+
+    if (error) throw error;
+
+    const pageRows = data || [];
+    allRows.push(...pageRows);
+
+    if (pageRows.length < SUPABASE_PAGE_SIZE) break;
+  }
+
+  return allRows;
+};
 
 const loadAllData = async (retryAttempt = 0) => {
   if (!session?.user?.id) {
@@ -877,92 +1509,56 @@ const loadAllData = async (retryAttempt = 0) => {
     const userId = session.user.id;
 
     const [
-      expensesResult,
-      incomesResult,
-      loansResult,
-      emiResult,
-      prepaymentResult,
+      expenseRows,
+      incomeRows,
+      loanRows,
+      emiRows,
+      prepaymentRows,
     ] = await Promise.all([
-      supabase
-        .from("expenses")
-        .select("*")
-        .eq("user_id", userId)
-        .order("created_at", {
-          ascending: false,
-        }),
-
-      supabase
-        .from("incomes")
-        .select("*")
-        .eq("user_id", userId)
-        .order("created_at", {
-          ascending: false,
-        }),
-
-      supabase
-        .from("loans")
-        .select("*")
-        .eq("user_id", userId)
-        .order("created_at", {
-          ascending: false,
-        }),
-
-      supabase
-        .from("emi_payments")
-        .select("*")
-        .eq("user_id", userId)
-        .order("created_at", {
-          ascending: false,
-        }),
-
-      supabase
-        .from("prepayment_payments")
-        .select("*")
-        .eq("user_id", userId)
-        .order("created_at", {
-          ascending: false,
-        }),
+      fetchAllUserRows("expenses", userId),
+      fetchAllUserRows("incomes", userId),
+      fetchAllUserRows("loans", userId),
+      fetchAllUserRows("emi_payments", userId),
+      fetchAllUserRows("prepayment_payments", userId),
     ]);
 
-    if (expensesResult.error) throw expensesResult.error;
-    if (incomesResult.error) throw incomesResult.error;
-    if (loansResult.error) throw loansResult.error;
-    if (emiResult.error) throw emiResult.error;
-    if (prepaymentResult.error) throw prepaymentResult.error;
-
     setExpenses(
-      (expensesResult.data || []).map(
+      expenseRows.map(
         normalizeExpense
       )
     );
 
     setIncomes(
-      (incomesResult.data || []).map(
+      incomeRows.map(
         normalizeIncome
       )
     );
 
     setLoans(
-      (loansResult.data || []).map(
+      loanRows.map(
         normalizeLoan
       )
     );
 
     setEmiPayments(
-      (emiResult.data || []).map(
+      emiRows.map(
         normalizeEmiPayment
       )
     );
 
     setPrepaymentPayments(
-      (prepaymentResult.data || []).map(
+      prepaymentRows.map(
         normalizePrepaymentPayment
       )
     );
 
-    console.log(
-      "USER DATA LOADED SUCCESSFULLY"
-    );
+    console.log("USER DATA LOADED SUCCESSFULLY", {
+      expenses: expenseRows.length,
+      incomes: incomeRows.length,
+      loans: loanRows.length,
+      emiPayments: emiRows.length,
+      prepaymentPayments: prepaymentRows.length,
+    });
   } catch (error) {
     console.error(
       "Supabase loading error:",
@@ -1157,20 +1753,34 @@ useEffect(() => {
      CALCULATIONS
   ========================= */
 
+  const matchesSelectedPeriod = (dateValue) => {
+    const value = String(dateValue || "").slice(0, 10);
+
+    if (!value) return false;
+
+    if (periodType === "all") return true;
+
+    if (periodType === "yearly") {
+      return value.slice(0, 4) === String(filterYear);
+    }
+
+    if (periodType === "custom") {
+      const afterFrom = !customFrom || value >= customFrom;
+      const beforeTo = !customTo || value <= customTo;
+      return afterFrom && beforeTo;
+    }
+
+    return getMonthKey(value) === month;
+  };
+
   const monthExpenses = useMemo(
-    () =>
-      expenses.filter(
-        (x) => getMonthKey(x.date) === month
-      ),
-    [expenses, month]
+    () => expenses.filter((x) => matchesSelectedPeriod(x.date)),
+    [expenses, month, periodType, filterYear, customFrom, customTo]
   );
 
   const monthIncomes = useMemo(
-    () =>
-      incomes.filter(
-        (x) => getMonthKey(x.date) === month
-      ),
-    [incomes, month]
+    () => incomes.filter((x) => matchesSelectedPeriod(x.date)),
+    [incomes, month, periodType, filterYear, customFrom, customTo]
   );
 
   const totalExpenses = expenses.reduce(
@@ -1182,6 +1792,129 @@ useEffect(() => {
     (s, x) => s + Number(x.amount || 0),
     0
   );
+
+  const todayKey = getToday();
+
+  const lifetimeExpenses = useMemo(
+    () =>
+      expenses.filter((item) => {
+        const date = String(item.date || "").slice(0, 10);
+        return date && date <= todayKey;
+      }),
+    [expenses, todayKey]
+  );
+
+  const lifetimeIncomes = useMemo(
+    () =>
+      incomes.filter((item) => {
+        const date = String(item.date || "").slice(0, 10);
+        return date && date <= todayKey;
+      }),
+    [incomes, todayKey]
+  );
+
+  const lifetimeExpenseTotal = useMemo(
+    () =>
+      lifetimeExpenses.reduce(
+        (sum, item) => sum + Number(item.amount || 0),
+        0
+      ),
+    [lifetimeExpenses]
+  );
+
+  const lifetimeIncomeTotal = useMemo(
+    () =>
+      lifetimeIncomes.reduce(
+        (sum, item) => sum + Number(item.amount || 0),
+        0
+      ),
+    [lifetimeIncomes]
+  );
+
+  const lifetimeSavings = lifetimeIncomeTotal - lifetimeExpenseTotal;
+  const lifetimeBalance = lifetimeSavings;
+
+  const lifetimeStartDate = useMemo(() => {
+    const dates = [...lifetimeExpenses, ...lifetimeIncomes]
+      .map((item) => String(item.date || "").slice(0, 10))
+      .filter(Boolean)
+      .sort();
+
+    return dates[0] || "";
+  }, [lifetimeExpenses, lifetimeIncomes]);
+
+  const lifetimeDateLabel = lifetimeStartDate
+    ? `From ${new Date(`${lifetimeStartDate}T00:00:00`).toLocaleDateString(
+        "en-IN",
+        { day: "2-digit", month: "short", year: "numeric" }
+      )} to Today`
+    : "No transactions recorded yet";
+
+  const dashboardMonthExpenses = useMemo(
+    () => expenses.filter((item) => getMonthKey(item.date) === month),
+    [expenses, month]
+  );
+
+  const dashboardMonthIncomes = useMemo(
+    () => incomes.filter((item) => getMonthKey(item.date) === month),
+    [incomes, month]
+  );
+
+  const dashboardMonthExpenseTotal = useMemo(
+    () =>
+      dashboardMonthExpenses.reduce(
+        (sum, item) => sum + Number(item.amount || 0),
+        0
+      ),
+    [dashboardMonthExpenses]
+  );
+
+  const dashboardMonthIncomeTotal = useMemo(
+    () =>
+      dashboardMonthIncomes.reduce(
+        (sum, item) => sum + Number(item.amount || 0),
+        0
+      ),
+    [dashboardMonthIncomes]
+  );
+
+  const dashboardMonthSavings =
+    dashboardMonthIncomeTotal - dashboardMonthExpenseTotal;
+
+  const dashboardMonthLabel = new Date(
+    `${month || getMonthKey(todayKey)}-01T00:00:00`
+  ).toLocaleString("en-IN", {
+    month: "long",
+    year: "numeric",
+  });
+
+  const dashboardYears = useMemo(() => {
+    const transactionYears = [...expenses, ...incomes]
+      .map((item) => Number(String(item.date || "").slice(0, 4)))
+      .filter((year) => Number.isInteger(year) && year >= 1900 && year <= 2200);
+    const currentYear = new Date().getFullYear();
+    const selectedDashboardYear =
+      Number(String(month || "").slice(0, 4)) || currentYear;
+    const selectedLedgerYear =
+      Number(String(expenseLedgerDate || "").slice(0, 4)) || currentYear;
+    const firstYear = Math.min(
+      currentYear - 20,
+      selectedDashboardYear,
+      selectedLedgerYear,
+      ...transactionYears
+    );
+    const lastYear = Math.max(
+      currentYear + 10,
+      selectedDashboardYear,
+      selectedLedgerYear,
+      ...transactionYears
+    );
+
+    return Array.from(
+      { length: lastYear - firstYear + 1 },
+      (_, index) => firstYear + index
+    );
+  }, [expenses, incomes, month, expenseLedgerDate]);
 
   const monthExpenseTotal = monthExpenses.reduce(
     (s, x) => s + Number(x.amount || 0),
@@ -1198,6 +1931,93 @@ useEffect(() => {
 
   const monthSavings =
     monthIncomeTotal - monthExpenseTotal;
+
+  const privateMoney = (value) =>
+    amountsVisible ? money(value) : "₹ ••••••";
+
+  const lifetimePrivateMoney = (value) =>
+    lifetimeAmountsVisible ? money(value) : "₹ ••••••";
+
+  const expenseSuggestions = useMemo(() => {
+    const suggestionsByName = new Map();
+
+    expenses.forEach((item) => {
+      const note = String(item.note || "").trim();
+      const key = note.toLocaleLowerCase("en-IN");
+
+      if (!note || suggestionsByName.has(key)) return;
+
+      suggestionsByName.set(key, {
+        note,
+      });
+    });
+
+    return Array.from(suggestionsByName.values());
+  }, [expenses]);
+
+  const matchingExpenseSuggestions = useMemo(() => {
+    const query = String(expenseForm.note || "")
+      .trim()
+      .toLocaleLowerCase("en-IN");
+
+    return expenseSuggestions
+      .filter(
+        (item) =>
+          !query || item.note.toLocaleLowerCase("en-IN").includes(query)
+      )
+      .slice(0, 6);
+  }, [expenseSuggestions, expenseForm.note]);
+
+  const applyExpenseSuggestion = (suggestion) => {
+    setExpenseForm((current) => ({
+      ...current,
+      note: suggestion.note,
+    }));
+    setExpenseSuggestionOpen(false);
+  };
+
+  const ledgerEntrySuggestions = useMemo(() => {
+    const suggestionsByName = new Map();
+    const sourceItems = ledgerEntryType === "expense" ? expenses : incomes;
+
+    sourceItems.forEach((item) => {
+      const fallbackName =
+        ledgerEntryType === "expense" ? item.category : item.source;
+      const description = String(item.note || "").trim();
+      const label = description || String(fallbackName || "").trim();
+      const key = label.toLocaleLowerCase("en-IN");
+
+      if (!label || suggestionsByName.has(key)) return;
+
+      suggestionsByName.set(key, {
+        label,
+        description: description || label,
+      });
+    });
+
+    return Array.from(suggestionsByName.values());
+  }, [ledgerEntryType, expenses, incomes]);
+
+  const matchingLedgerSuggestions = useMemo(() => {
+    const query = String(ledgerQuickForm.description || "")
+      .trim()
+      .toLocaleLowerCase("en-IN");
+
+    return ledgerEntrySuggestions
+      .filter(
+        (suggestion) =>
+          !query || suggestion.label.toLocaleLowerCase("en-IN").includes(query)
+      )
+      .slice(0, 6);
+  }, [ledgerEntrySuggestions, ledgerQuickForm.description]);
+
+  const applyLedgerSuggestion = (suggestion) => {
+    setLedgerQuickForm((current) => ({
+      ...current,
+      description: suggestion.description || suggestion.label,
+    }));
+    setLedgerSuggestionOpen(false);
+  };
 
   const trackedPrincipalPaid = useMemo(
     () =>
@@ -1244,7 +2064,6 @@ useEffect(() => {
 
     return expenses.filter((x) => {
       const expenseDate = String(x.date || "").slice(0, 10);
-      const expenseMonth = expenseDate.slice(0, 7);
 
       const matchesSearch =
         !q ||
@@ -1262,18 +2081,11 @@ useEffect(() => {
         filterMode === "All" ||
         String(x.paymentMode || "") === String(filterMode);
 
-      const matchesMonth =
-        filterMonth === "All" || expenseMonth === filterMonth;
-
-      const matchesDate =
-        !filterDate || expenseDate === filterDate;
-
       return (
         matchesSearch &&
         matchesCategory &&
         matchesMode &&
-        matchesMonth &&
-        matchesDate
+        matchesSelectedPeriod(expenseDate)
       );
     });
   }, [
@@ -1281,9 +2093,447 @@ useEffect(() => {
     search,
     filterCategory,
     filterMode,
-    filterMonth,
-    filterDate,
+    month,
+    periodType,
+    filterYear,
+    customFrom,
+    customTo,
   ]);
+
+  const filteredIncomes = useMemo(() => {
+    const q = search.trim().toLowerCase();
+
+    return incomes.filter((x) => {
+      const incomeDate = String(x.date || "").slice(0, 10);
+
+      const matchesSearch =
+        !q ||
+        String(x.source || "").toLowerCase().includes(q) ||
+        String(x.note || "").toLowerCase().includes(q) ||
+        String(x.paymentMode || "").toLowerCase().includes(q) ||
+        incomeDate.toLowerCase().includes(q) ||
+        String(x.amount || "").toLowerCase().includes(q);
+
+      const matchesMode =
+        filterMode === "All" ||
+        String(x.paymentMode || "") === String(filterMode);
+
+      return (
+        matchesSearch &&
+        matchesMode &&
+        matchesSelectedPeriod(incomeDate)
+      );
+    });
+  }, [
+    incomes,
+    search,
+    filterMode,
+    month,
+    periodType,
+    filterYear,
+    customFrom,
+    customTo,
+  ]);
+
+  const expenseLedgerPeriod = useMemo(() => {
+    const selected = new Date(`${expenseLedgerDate}T00:00:00`);
+    let start;
+    let end;
+
+    if (expenseLedgerView === "yearly") {
+      start = new Date(selected.getFullYear(), 0, 1);
+      end = new Date(selected.getFullYear(), 11, 31);
+    } else if (expenseLedgerView === "monthly") {
+      start = new Date(selected.getFullYear(), selected.getMonth(), 1);
+      end = new Date(selected.getFullYear(), selected.getMonth() + 1, 0);
+    } else {
+      start = new Date(selected);
+      end = new Date(selected);
+    }
+
+    const dateKey = (date) =>
+      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+        date.getDate()
+      ).padStart(2, "0")}`;
+
+    return { start: dateKey(start), end: dateKey(end) };
+  }, [expenseLedgerDate, expenseLedgerView]);
+
+  const expenseLedgerData = useMemo(() => {
+    const { start, end } = expenseLedgerPeriod;
+    const inRange = (value) => {
+      const date = String(value || "").slice(0, 10);
+      return date >= start && date <= end;
+    };
+    const beforeRange = (value) => String(value || "").slice(0, 10) < start;
+
+    const periodExpenses = expenses.filter((item) => inRange(item.date));
+    const periodIncomes = incomes.filter((item) => inRange(item.date));
+    const carryForward =
+      incomes.filter((item) => beforeRange(item.date)).reduce((sum, item) => sum + Number(item.amount || 0), 0) -
+      expenses.filter((item) => beforeRange(item.date)).reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    const credit = periodIncomes.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    const debit = periodExpenses.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+
+    return {
+      expenses: periodExpenses.sort((a, b) => String(b.date).localeCompare(String(a.date))),
+      incomes: periodIncomes.sort((a, b) => String(b.date).localeCompare(String(a.date))),
+      carryForward,
+      credit,
+      debit,
+      balance: carryForward + credit - debit,
+    };
+  }, [expenses, incomes, expenseLedgerPeriod]);
+
+  const ledgerSelectedDate = new Date(`${expenseLedgerDate}T00:00:00`);
+  const ledgerDayNumber = ledgerSelectedDate.getDate();
+  const ledgerSelectedMonth = String(ledgerSelectedDate.getMonth() + 1).padStart(
+    2,
+    "0"
+  );
+  const ledgerSelectedYear = ledgerSelectedDate.getFullYear();
+  const ledgerSelectedMonthLabel =
+    dashboardMonths.find(([value]) => value === ledgerSelectedMonth)?.[1] ||
+    ledgerSelectedDate.toLocaleDateString("en-IN", { month: "long" });
+  const ledgerWeekday = ledgerSelectedDate.toLocaleDateString("en-IN", {
+    weekday: "long",
+  });
+
+  const ledgerPickerYears = useMemo(() => {
+    const transactionYears = [...expenses, ...incomes]
+      .map((item) => Number(String(item.date || "").slice(0, 4)))
+      .filter((year) => Number.isInteger(year) && year >= 1900 && year <= 2200);
+    const currentYear = new Date().getFullYear();
+    const firstYear = transactionYears.length
+      ? Math.min(currentYear, ledgerSelectedYear, ...transactionYears)
+      : Math.min(currentYear - 4, ledgerSelectedYear);
+    const lastYear = transactionYears.length
+      ? Math.max(currentYear, ledgerSelectedYear, ...transactionYears)
+      : Math.max(currentYear, ledgerSelectedYear);
+
+    return Array.from(
+      { length: lastYear - firstYear + 1 },
+      (_, index) => firstYear + index
+    );
+  }, [expenses, incomes, ledgerSelectedYear]);
+
+  const yearlyOverviewRows = useMemo(
+    () =>
+      dashboardMonths.map(([monthValue, monthLabel]) => {
+        const monthKey = `${ledgerSelectedYear}-${monthValue}`;
+        const income = incomes
+          .filter((item) => getMonthKey(item.date) === monthKey)
+          .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+        const expense = expenses
+          .filter((item) => getMonthKey(item.date) === monthKey)
+          .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+
+        return {
+          monthValue,
+          monthLabel,
+          income,
+          expense,
+          balance: income - expense,
+        };
+      }),
+    [expenses, incomes, ledgerSelectedYear]
+  );
+
+  const yearlyOverviewTotal = useMemo(
+    () =>
+      yearlyOverviewRows.reduce(
+        (total, row) => ({
+          income: total.income + row.income,
+          expense: total.expense + row.expense,
+          balance: total.balance + row.balance,
+        }),
+        { income: 0, expense: 0, balance: 0 }
+      ),
+    [yearlyOverviewRows]
+  );
+
+  const ledgerMonthYearLabel = ledgerSelectedDate.toLocaleDateString("en-IN", {
+    month: "long",
+    year: "numeric",
+  });
+
+  const ledgerStatementPeriodLabel =
+    expenseLedgerView === "yearly"
+      ? `January - December ${ledgerSelectedYear}`
+      : ledgerMonthYearLabel;
+
+  const ledgerStatementEntries = useMemo(() => {
+    const incomeEntries = expenseLedgerData.incomes.map((item, index) => ({
+      key: `income-${item.id || `${item.date}-${index}`}`,
+      date: String(item.date || "").slice(0, 10),
+      type: "Income",
+      entryName: item.note || item.source || "Income",
+      category: item.source || "Other",
+      paymentMode: item.paymentMode || "Bank Transfer",
+      amount: Number(item.amount || 0),
+      createdAt: item.createdAt || "",
+    }));
+
+    const expenseEntries = expenseLedgerData.expenses.map((item, index) => ({
+      key: `expense-${item.id || `${item.date}-${index}`}`,
+      date: String(item.date || "").slice(0, 10),
+      type: "Expense",
+      entryName: item.note || item.category || "Expense",
+      category: item.category || "Other",
+      paymentMode: item.paymentMode || "Cash",
+      amount: Number(item.amount || 0),
+      createdAt: item.createdAt || "",
+    }));
+
+    return [...incomeEntries, ...expenseEntries].sort((a, b) => {
+      const dateOrder = a.date.localeCompare(b.date);
+      if (dateOrder) return dateOrder;
+
+      const createdOrder = String(a.createdAt).localeCompare(String(b.createdAt));
+      if (createdOrder) return createdOrder;
+
+      return a.key.localeCompare(b.key);
+    });
+  }, [expenseLedgerData]);
+
+  const monthlyLedgerDayGroups = useMemo(() => {
+    if (expenseLedgerView !== "monthly") return [];
+
+    const groupsByDate = new Map();
+
+    ledgerStatementEntries.forEach((entry) => {
+      if (!entry.date) return;
+
+      if (!groupsByDate.has(entry.date)) {
+        groupsByDate.set(entry.date, {
+          date: entry.date,
+          incomes: [],
+          expenses: [],
+        });
+      }
+
+      const group = groupsByDate.get(entry.date);
+      if (entry.type === "Income") group.incomes.push(entry);
+      else group.expenses.push(entry);
+    });
+
+    let runningBalance = expenseLedgerData.carryForward;
+    const chronologicalGroups = Array.from(groupsByDate.values()).sort((a, b) =>
+      a.date.localeCompare(b.date)
+    );
+
+    return chronologicalGroups
+      .map((group) => {
+        const incomeTotal = group.incomes.reduce(
+          (sum, entry) => sum + entry.amount,
+          0
+        );
+        const expenseTotal = group.expenses.reduce(
+          (sum, entry) => sum + entry.amount,
+          0
+        );
+
+        runningBalance += incomeTotal - expenseTotal;
+
+        return {
+          ...group,
+          incomeTotal,
+          expenseTotal,
+          balance: runningBalance,
+        };
+      })
+      .reverse();
+  }, [expenseLedgerView, ledgerStatementEntries, expenseLedgerData.carryForward]);
+
+  const formatLedgerDayHeading = (dateValue) =>
+    new Date(`${dateValue}T00:00:00`).toLocaleDateString("en-IN", {
+      weekday: "short",
+      day: "2-digit",
+      month: "short",
+    });
+
+  const formatLedgerPrintDate = (dateValue) => {
+    const [year, monthValue, day] = String(dateValue || "").split("-");
+    return year && monthValue && day
+      ? `${day}-${monthValue}-${year}`
+      : String(dateValue || "");
+  };
+
+  const openLedgerComposer = (entryType = "expense") => {
+    setLedgerEntryType(entryType);
+    setLedgerQuickForm({
+      name: entryType === "expense" ? "Food" : "Salary",
+      amount: "",
+      description: "",
+      paymentMode: entryType === "expense" ? "UPI" : "Bank Transfer",
+    });
+    setLedgerSuggestionOpen(false);
+    setLedgerPeriodPicker(null);
+    setLedgerComposerOpen(true);
+  };
+
+  const openExpenseLedgerFromDashboard = () => {
+    setExpenseLedgerDate(getToday());
+    setExpenseLedgerView("daily");
+    setLedgerComposerOpen(false);
+    setLedgerSuggestionOpen(false);
+    setActivePage("expenses");
+  };
+
+  const changeLedgerEntryType = (entryType) => {
+    setLedgerEntryType(entryType);
+    setLedgerQuickForm((current) => ({
+      ...current,
+      name: entryType === "expense" ? "Food" : "Salary",
+      paymentMode: entryType === "expense" ? "UPI" : "Bank Transfer",
+    }));
+    setLedgerSuggestionOpen(false);
+  };
+
+  const updateExpenseLedgerDate = ({ year, monthNumber, day } = {}) => {
+    const current = new Date(`${expenseLedgerDate}T00:00:00`);
+    const nextYear = Number(year ?? current.getFullYear());
+    const nextMonth = Number(monthNumber ?? current.getMonth() + 1);
+    const requestedDay = Number(day ?? current.getDate());
+    const lastDayOfMonth = new Date(nextYear, nextMonth, 0).getDate();
+    const safeDay = Math.min(Math.max(requestedDay, 1), lastDayOfMonth);
+
+    setExpenseLedgerDate(
+      `${nextYear}-${String(nextMonth).padStart(2, "0")}-${String(safeDay).padStart(
+        2,
+        "0"
+      )}`
+    );
+  };
+
+  const openLedgerPeriodPicker = (pickerType) => {
+    setLedgerPickerMonth(ledgerSelectedMonth);
+    setLedgerPickerYear(ledgerSelectedYear);
+    setLedgerPeriodPicker(pickerType);
+  };
+
+  const applyLedgerMonthPicker = () => {
+    updateExpenseLedgerDate({
+      year: ledgerPickerYear,
+      monthNumber: Number(ledgerPickerMonth),
+      day: 1,
+    });
+    setLedgerPeriodPicker(null);
+  };
+
+  const selectLedgerYear = (year) => {
+    updateExpenseLedgerDate({
+      year,
+      day: expenseLedgerView === "yearly" ? 1 : undefined,
+    });
+    setLedgerPeriodPicker(null);
+  };
+
+  const shiftExpenseLedgerPeriod = (direction) => {
+    const next = new Date(`${expenseLedgerDate}T00:00:00`);
+    if (expenseLedgerView === "yearly") {
+      next.setFullYear(next.getFullYear() + direction, 0, 1);
+    } else if (expenseLedgerView === "monthly") {
+      next.setMonth(next.getMonth() + direction, 1);
+    } else {
+      next.setDate(next.getDate() + direction);
+    }
+
+    setExpenseLedgerDate(
+      `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(
+        next.getDate()
+      ).padStart(2, "0")}`
+    );
+  };
+
+  const exportExpenseLedgerPdf = () => {
+    if (!ledgerStatementEntries.length) {
+      alert(`No entries found for ${ledgerStatementPeriodLabel}.`);
+      return;
+    }
+
+    const previousTitle = document.title;
+    const periodKey =
+      expenseLedgerView === "yearly"
+        ? String(ledgerSelectedYear)
+        : `${ledgerSelectedYear}-${ledgerSelectedMonth}`;
+
+    document.title = `Maza-Hishob-${expenseLedgerView}-Statement-${periodKey}`;
+    window.print();
+    window.setTimeout(() => {
+      document.title = previousTitle;
+    }, 250);
+  };
+
+  const saveLedgerQuickEntry = async (event) => {
+    event.preventDefault();
+
+    if (!ledgerQuickForm.amount || Number(ledgerQuickForm.amount) <= 0) {
+      alert("Please enter a valid amount.");
+      return;
+    }
+
+    if (!session?.user?.id) {
+      alert("Please login again.");
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      const userId = session.user.id;
+
+      if (ledgerEntryType === "expense") {
+        const { data, error } = await supabase
+          .from("expenses")
+          .insert({
+            user_id: userId,
+            amount: Number(ledgerQuickForm.amount),
+            category: ledgerQuickForm.name || "Other",
+            date: expenseLedgerDate || getToday(),
+            payment_mode: ledgerQuickForm.paymentMode || "UPI",
+            note: ledgerQuickForm.description || "",
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        setExpenses((current) => [normalizeExpense(data), ...current]);
+      } else {
+        const { data, error } = await supabase
+          .from("incomes")
+          .insert({
+            user_id: userId,
+            amount: Number(ledgerQuickForm.amount),
+            source: ledgerQuickForm.name || "Other",
+            date: expenseLedgerDate || getToday(),
+            payment_mode: ledgerQuickForm.paymentMode || "Bank Transfer",
+            note: ledgerQuickForm.description || "",
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        setIncomes((current) => [normalizeIncome(data), ...current]);
+      }
+
+      setLedgerQuickForm({
+        name: ledgerEntryType === "expense" ? "Food" : "Salary",
+        amount: "",
+        description: "",
+        paymentMode: ledgerEntryType === "expense" ? "UPI" : "Bank Transfer",
+      });
+      setLedgerSuggestionOpen(false);
+      setLedgerComposerOpen(false);
+    } catch (error) {
+      console.error("Quick ledger save error:", error);
+      alert(`Unable to save entry.\n\n${error.message || error}`);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const categoryTotals = useMemo(() => {
     return categories
@@ -1303,12 +2553,33 @@ useEffect(() => {
       .sort((a, b) => b.amount - a.amount);
   }, [monthExpenses]);
 
-  const monthLabel = new Date(
-    `${month}-01T00:00:00`
-  ).toLocaleString("en-IN", {
-    month: "long",
-    year: "numeric",
-  });
+  const dashboardCategoryTotals = useMemo(() => {
+    return categories
+      .map((category) => ({
+        category,
+        amount: dashboardMonthExpenses
+          .filter((item) => item.category === category)
+          .reduce((sum, item) => sum + Number(item.amount || 0), 0),
+      }))
+      .filter((item) => item.amount > 0)
+      .sort((a, b) => b.amount - a.amount);
+  }, [dashboardMonthExpenses]);
+
+  const monthLabel = (() => {
+    if (periodType === "all") return "All Time";
+    if (periodType === "yearly") return `Year ${filterYear}`;
+    if (periodType === "custom") {
+      if (customFrom && customTo) return `${customFrom} to ${customTo}`;
+      if (customFrom) return `From ${customFrom}`;
+      if (customTo) return `Up to ${customTo}`;
+      return "Custom Range";
+    }
+
+    return new Date(`${month}-01T00:00:00`).toLocaleString("en-IN", {
+      month: "long",
+      year: "numeric",
+    });
+  })();
 const last6Months = useMemo(() => {
   const result = [];
 
@@ -1369,12 +2640,62 @@ const last6Months = useMemo(() => {
 
   return result;
 }, [month, incomes, expenses]);
+
+  const dashboardCategoryColors = [
+    "#28c8a7",
+    "#278de4",
+    "#ef405b",
+    "#8b63d9",
+    "#f39a2e",
+    "#58b8d7",
+    "#d45c8f",
+  ];
+
+  const dashboardExpenseTotal = dashboardCategoryTotals.reduce(
+    (sum, item) => sum + Number(item.amount || 0),
+    0
+  );
+
+  const dashboardDonutStops = (() => {
+    if (!dashboardExpenseTotal) {
+      return "rgba(255,255,255,.08) 0 100%";
+    }
+
+    let cursor = 0;
+
+    return dashboardCategoryTotals
+      .slice(0, 7)
+      .map((item, index) => {
+        const pct =
+          (Number(item.amount || 0) / dashboardExpenseTotal) * 100;
+        const start = cursor;
+        cursor += pct;
+        return `${dashboardCategoryColors[index % dashboardCategoryColors.length]} ${start}% ${cursor}%`;
+      })
+      .join(", ");
+  })();
+
+  const dashboardChartMax = Math.max(
+    1,
+    ...last6Months.flatMap((item) => [
+      Number(item.income || 0),
+      Number(item.expense || 0),
+      Math.max(Number(item.savings || 0), 0),
+    ])
+  );
+
+  const dashboardActiveLoans = loans
+    .filter((loan) => (loan.status || "Active") !== "Closed")
+    .slice(0, 2);
+
   /* =========================
      EXPENSE
   ========================= */
 
   const openExpense = (item = null) => {
     setEditing(item);
+    setExpenseSuggestionOpen(false);
+    setLedgerComposerOpen(false);
 
     setExpenseForm(
       item
@@ -1390,7 +2711,7 @@ const last6Months = useMemo(() => {
             amount: "",
             category: "Food",
             date: getToday(),
-            paymentMode: "Cash",
+            paymentMode: "UPI",
             note: "",
           }
     );
@@ -1520,6 +2841,7 @@ const last6Months = useMemo(() => {
 
   const openIncome = (item = null) => {
     setEditing(item);
+    setLedgerComposerOpen(false);
 
     setIncomeForm(
       item
@@ -2934,6 +4256,28 @@ const getPendingEmis = (loan) => {
 
   const DRIVE_BACKUP_FOLDER = "Maza Hishob Backups";
 
+  const recordBackupTelemetry = async ({
+    status,
+    provider = "google_drive",
+    detail = "",
+  }) => {
+    try {
+      if (!session?.user?.id) return;
+
+      const { error } = await supabase.rpc("record_backup_event", {
+        p_status: status,
+        p_provider: provider,
+        p_detail: String(detail || "").slice(0, 1000),
+      });
+
+      if (error) {
+        console.warn("Backup telemetry skipped:", error.message || error);
+      }
+    } catch (error) {
+      console.warn("Backup telemetry skipped:", error);
+    }
+  };
+
   const buildBackupData = () => ({
     app: "Maza Hishob",
     schemaVersion: 3,
@@ -2977,7 +4321,10 @@ const getPendingEmis = (loan) => {
       );
     }
 
-    const token = session?.provider_token;
+    const token =
+      driveAccessToken ||
+      sessionStorage.getItem("mh_drive_access_token_v2") ||
+      session?.provider_token;
 
     if (!token) {
       throw new Error(
@@ -3176,9 +4523,22 @@ const getPendingEmis = (loan) => {
         `Google Drive backup saved successfully: ${uploaded.name}`
       );
 
+      await recordBackupTelemetry({
+        status: "success",
+        provider: "google_drive",
+        detail: `Backup saved: ${uploaded.name}`,
+      });
+
       await listDriveBackups({ silent: true });
     } catch (error) {
       console.error("Google Drive backup error:", error);
+
+      await recordBackupTelemetry({
+        status: "failed",
+        provider: "google_drive",
+        detail: error?.message || String(error),
+      });
+
       setBackupMessage(
         `Unable to back up to Google Drive. ${
           error?.message || error
@@ -3334,11 +4694,22 @@ const getPendingEmis = (loan) => {
   const insertRows = async (table, rows) => {
     if (!rows.length) return;
 
-    const { error } = await supabase
-      .from(table)
-      .insert(rows);
+    const batchSize = 500;
 
-    if (error) throw error;
+    for (let from = 0; from < rows.length; from += batchSize) {
+      const batch = rows.slice(from, from + batchSize);
+      const { error } = await supabase
+        .from(table)
+        .insert(batch);
+
+      if (error) {
+        throw new Error(
+          `${table} restore failed for rows ${from + 1}-${from + batch.length}. ${
+            error.message || error
+          }`
+        );
+      }
+    }
   };
 
   const writeBackupToSupabase = async (backup, userId) => {
@@ -3615,11 +4986,12 @@ ${error.message || error}`);
     setModal(null);
     setEditing(null);
     setSelectedLoan(null);
+    setExpenseSuggestionOpen(false);
   };
 
   const nav = [
     ["home", "⌂", "Home"],
-    ["expenses", "◈", "Daily Expenses"],
+    ["expenses", "◈", "Expenses"],
     ["loans", "▣", "Loans"],
     ["reports", "◫", "Reports"],
   ];
@@ -3875,29 +5247,62 @@ if (!session) {
   return (
     <div className="app-shell">
       <header className="top-header">
-        <div className="brand">
-          <div className="brand-mark">
-            MH
-          </div>
+        <button
+          type="button"
+          className="brand brand-home-btn"
+          onClick={() => {
+            setActivePage("home");
+            setProfileMenuOpen(false);
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          }}
+          aria-label="Go to Home"
+          title="Home"
+        >
+          <img
+            className="brand-logo"
+            src={mazaHishobLogo}
+            alt="Maza Hishob"
+          />
 
           <div className="brand-text">
             <h1>Maza Hishob</h1>
             <p>
-              Complete Financial Tracking
-              Solution
+              Money Tracker & Personal Finance Manager
             </p>
           </div>
-        </div>
+        </button>
 
         <div className="header-actions">
           <button
-            className="icon-btn"
-            title="Reports"
+            type="button"
+            className="icon-btn premium-alert-btn"
+            title="Alerts"
+            aria-label="Alerts"
             onClick={() =>
-              setActivePage("reports")
+              alert("No new alerts.")
             }
           >
-            ◫
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M10 21h4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+              />
+            </svg>
+            <span className="premium-alert-dot" />
           </button>
 
           <div className="account-menu-wrap">
@@ -4154,7 +5559,8 @@ if (!session) {
                 ⚙
               </span>
 
-              <span>Settings</span>
+              <span className="desktop-nav-label">Settings</span>
+              <span className="mobile-nav-label">More</span>
             </button>
 
             <button
@@ -4188,741 +5594,1341 @@ if (!session) {
 
         <main className="main-content">
           {activePage === "home" && (
-            <>
-              <section className="welcome-section">
-                <div>
-                  <span className="eyebrow">
-                    DASHBOARD
-                  </span>
+            <div className="locked-home-dashboard">
+              <section className="locked-summary-section locked-lifetime-summary">
+                <div className="locked-summary-toolbar">
+                  <div className="locked-summary-copy">
+                    <span>TOTAL SUMMARY</span>
+                    <h3>From Start to Today</h3>
+                    <p>{lifetimeDateLabel}</p>
+                  </div>
 
-                  <h2>
-                    Complete Financial
-                    Tracking Solution
-                  </h2>
-
-                  <p>
-                    Here's your financial
-                    overview
-                  </p>
+                  <button
+                    type="button"
+                    className="locked-summary-eye"
+                    onClick={() =>
+                      setLifetimeAmountsVisible((current) => !current)
+                    }
+                    aria-label={
+                      lifetimeAmountsVisible
+                        ? "Hide total amounts"
+                        : "Show total amounts"
+                    }
+                    title={
+                      lifetimeAmountsVisible
+                        ? "Hide total amounts"
+                        : "Show total amounts"
+                    }
+                  >
+                    <PrivacyIcon visible={lifetimeAmountsVisible} />
+                  </button>
                 </div>
 
-                <div className="month-picker">
-                  <span>
-                    Overview
-                  </span>
+                <div className="locked-kpi-grid">
+                  <button
+                    type="button"
+                    className="locked-kpi-card income"
+                    onClick={() => setActivePage("income")}
+                  >
+                    <span className="locked-kpi-icon">
+                      <DashboardIcon type="income" />
+                    </span>
+                    <span>Total Income</span>
+                    <strong>{lifetimePrivateMoney(lifetimeIncomeTotal)}</strong>
+                    <small>Start date to today</small>
+                  </button>
 
-                  <input
-                    type="month"
-                    value={month}
-                    onChange={(e) =>
-                      setMonth(
-                        e.target.value
-                      )
-                    }
-                  />
+                  <button
+                    type="button"
+                    className="locked-kpi-card expense"
+                    onClick={() => openExpense()}
+                  >
+                    <span className="locked-kpi-icon">
+                      <DashboardIcon type="expense" />
+                    </span>
+                    <span>Total Expenses</span>
+                    <strong>{lifetimePrivateMoney(lifetimeExpenseTotal)}</strong>
+                    <small>Start date to today</small>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="locked-kpi-card savings"
+                    onClick={() => setActivePage("reports")}
+                  >
+                    <span className="locked-kpi-icon">◆</span>
+                    <span>Total Savings</span>
+                    <strong>{lifetimePrivateMoney(lifetimeSavings)}</strong>
+                    <small>Income minus expenses</small>
+                  </button>
+
+                  <article className="locked-kpi-card balance">
+                    <span className="locked-kpi-icon">₹</span>
+                    <span className="locked-balance-title">Total Balance</span>
+                    <strong>{lifetimePrivateMoney(lifetimeBalance)}</strong>
+                    <small>Available overall balance</small>
+
+                    <div className="locked-safe-blend" aria-hidden="true">
+                      <img src={dashboardSafe} alt="" />
+                    </div>
+                  </article>
                 </div>
               </section>
 
-              <section className="balance-card">
-                <div className="balance-glow glow-one" />
-                <div className="balance-glow glow-two" />
+              <section className="locked-summary-section locked-monthly-summary">
+                <div className="locked-summary-toolbar locked-monthly-toolbar">
+                  <div className="locked-summary-copy">
+                    <span>MONTHLY SUMMARY</span>
+                    <h3>{dashboardMonthLabel}</h3>
+                    <p>Select month and year to view monthly calculations</p>
+                  </div>
 
-                <div className="balance-header">
-                  <div>
-                    <span className="balance-label">
-                      TOTAL BALANCE
+                  <div className="locked-month-controls">
+                    <label>
+                      <span>Month</span>
+                      <select
+                        value={String(month).slice(5, 7)}
+                        onChange={(e) => {
+                          const selectedYear =
+                            String(month).slice(0, 4) || String(new Date().getFullYear());
+                          setMonth(`${selectedYear}-${e.target.value}`);
+                          setPeriodType("monthly");
+                        }}
+                        aria-label="Select dashboard month"
+                      >
+                        {dashboardMonths.map(([value, label]) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label>
+                      <span>Year</span>
+                      <select
+                        value={String(month).slice(0, 4)}
+                        onChange={(e) => {
+                          const selectedMonth = String(month).slice(5, 7) || "01";
+                          setMonth(`${e.target.value}-${selectedMonth}`);
+                          setPeriodType("monthly");
+                        }}
+                        aria-label="Select dashboard year"
+                      >
+                        {dashboardYears.map((year) => (
+                          <option key={year} value={year}>
+                            {year}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <button
+                      type="button"
+                      className="locked-summary-eye"
+                      onClick={() => setAmountsVisible((current) => !current)}
+                      aria-label={
+                        amountsVisible
+                          ? "Hide monthly amounts"
+                          : "Show monthly amounts"
+                      }
+                      title={
+                        amountsVisible
+                          ? "Hide monthly amounts"
+                          : "Show monthly amounts"
+                      }
+                    >
+                      <PrivacyIcon visible={amountsVisible} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="locked-kpi-grid locked-monthly-kpi-grid">
+                  <button
+                    type="button"
+                    className="locked-kpi-card income"
+                    onClick={() => setActivePage("income")}
+                  >
+                    <span className="locked-kpi-icon">
+                      <DashboardIcon type="income" />
                     </span>
+                    <span>Monthly Income</span>
+                    <strong>{privateMoney(dashboardMonthIncomeTotal)}</strong>
+                    <small>{dashboardMonthLabel}</small>
+                  </button>
 
-                    <h3>
-                      {money(
-                        totalBalance
+                  <button
+                    type="button"
+                    className="locked-kpi-card expense"
+                    onClick={() => openExpense()}
+                  >
+                    <span className="locked-kpi-icon">
+                      <DashboardIcon type="expense" />
+                    </span>
+                    <span>Monthly Expenses</span>
+                    <strong>{privateMoney(dashboardMonthExpenseTotal)}</strong>
+                    <small>{dashboardMonthLabel}</small>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="locked-kpi-card savings"
+                    onClick={() => setActivePage("reports")}
+                  >
+                    <span className="locked-kpi-icon">◆</span>
+                    <span>Monthly Savings</span>
+                    <strong>{privateMoney(dashboardMonthSavings)}</strong>
+                    <small>Income minus expenses</small>
+                  </button>
+
+                  <article className="locked-kpi-card balance monthly-balance">
+                    <span className="locked-kpi-icon">₹</span>
+                    <span className="locked-balance-title">Monthly Balance</span>
+                    <strong>{privateMoney(dashboardMonthSavings)}</strong>
+                    <small>{dashboardMonthLabel}</small>
+                  </article>
+                </div>
+              </section>
+
+              <section className="locked-dashboard-card locked-quick-card">
+                <div className="locked-section-title">
+                  <h3>QUICK ACTIONS</h3>
+                </div>
+
+                <div className="locked-quick-grid">
+                  <button type="button" onClick={openExpenseLedgerFromDashboard}>
+                    <span><DashboardIcon type="expense" /></span>
+                    <strong>Add Expense</strong>
+                  </button>
+
+                  <button type="button" onClick={openExpenseLedgerFromDashboard}>
+                    <span><DashboardIcon type="income" /></span>
+                    <strong>Add Income</strong>
+                  </button>
+
+                  <button type="button" onClick={() => openLoan()}>
+                    <span><DashboardIcon type="loan" /></span>
+                    <strong>Add Loan</strong>
+                  </button>
+
+                  <button type="button" onClick={() => setActivePage("loans")}>
+                    <span><DashboardIcon type="emi" /></span>
+                    <strong>EMI Paid</strong>
+                  </button>
+
+                  <button type="button" onClick={() => setActivePage("reports")}>
+                    <span><DashboardIcon type="reports" /></span>
+                    <strong>Reports</strong>
+                  </button>
+
+                  <button type="button" onClick={() => setActivePage("settings")}>
+                    <span>☁</span>
+                    <strong>Backup</strong>
+                  </button>
+                </div>
+              </section>
+
+              <section className="locked-content-grid">
+                <article className="locked-dashboard-card locked-breakdown-card">
+                  <div className="locked-section-title locked-title-row">
+                    <h3>EXPENSE BREAKDOWN</h3>
+                    <span>{dashboardMonthLabel}</span>
+                  </div>
+
+                  {dashboardCategoryTotals.length ? (
+                    <div className="locked-breakdown-layout">
+                      <div
+                        className="locked-donut"
+                        style={{
+                          background: `conic-gradient(${dashboardDonutStops})`,
+                        }}
+                      >
+                        <div className="locked-donut-center">
+                          <span>Total Expense</span>
+                          <strong>{privateMoney(dashboardExpenseTotal)}</strong>
+                        </div>
+                      </div>
+
+                      <div className="locked-breakdown-legend">
+                        {dashboardCategoryTotals.slice(0, 6).map((item, index) => {
+                          const pct =
+                            dashboardExpenseTotal > 0
+                              ? (Number(item.amount || 0) /
+                                  dashboardExpenseTotal) *
+                                100
+                              : 0;
+
+                          return (
+                            <div
+                              className="locked-breakdown-row"
+                              key={`locked-breakdown-${item.category}`}
+                            >
+                              <i
+                                style={{
+                                  background:
+                                    dashboardCategoryColors[
+                                      index % dashboardCategoryColors.length
+                                    ],
+                                }}
+                              />
+                              <div>
+                                <strong>{item.category}</strong>
+                                <span>
+                                  {privateMoney(item.amount)} ({pct.toFixed(1)}%)
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="locked-empty-state">
+                      No expenses for {dashboardMonthLabel}.
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    className="locked-link-button"
+                    onClick={() => setActivePage("expenses")}
+                  >
+                    View All Expenses →
+                  </button>
+                </article>
+
+                <div className="locked-side-stack">
+                  <article className="locked-dashboard-card locked-emi-card">
+                    <div className="locked-section-title">
+                      <h3>UPCOMING EMI</h3>
+                    </div>
+
+                    {upcomingLoan ? (
+                      <div className="locked-upcoming-emi">
+                        <span className="locked-emi-icon">
+                          <DashboardIcon type="bank" />
+                        </span>
+                        <div className="locked-emi-name">
+                          <strong>{upcomingLoan.loanName}</strong>
+                          <span>{upcomingLoan.lender || upcomingLoan.loanType}</span>
+                        </div>
+                        <div className="locked-emi-meta">
+                          <span>EMI Amount</span>
+                          <strong>{privateMoney(upcomingLoan.emi)}</strong>
+                        </div>
+                        <div className="locked-emi-meta">
+                          <span>Due Date</span>
+                          <strong>{upcomingLoan.nextEmiDate || "—"}</strong>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="locked-empty-state">
+                        No upcoming EMI.
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      className="locked-link-button"
+                      onClick={() => setActivePage("loans")}
+                    >
+                      View All EMIs →
+                    </button>
+                  </article>
+
+                  <article className="locked-dashboard-card locked-recent-card">
+                    <div className="locked-section-title locked-title-row">
+                      <h3>RECENT EXPENSES</h3>
+                      <button
+                        type="button"
+                        onClick={() => setActivePage("expenses")}
+                      >
+                        View All →
+                      </button>
+                    </div>
+
+                    <div className="locked-recent-list">
+                      {transactions
+                        .filter((item) => item.type === "expense")
+                        .slice(0, 5)
+                        .map((item, index) => (
+                          <div
+                            className="locked-recent-row"
+                            key={`locked-recent-${item.id}`}
+                          >
+                            <span className={`locked-recent-icon r${index}`}>
+                              <DashboardIcon
+                                type={
+                                  index === 0
+                                    ? "cart"
+                                    : index === 1
+                                    ? "fuel"
+                                    : "bolt"
+                                }
+                              />
+                            </span>
+
+                            <div>
+                              <strong>{item.title}</strong>
+                              <span>{item.paymentMode}</span>
+                            </div>
+
+                            <b>- {privateMoney(item.amount)}</b>
+                            <small>{item.date}</small>
+                          </div>
+                        ))}
+                    </div>
+                  </article>
+                </div>
+              </section>
+
+              <section className="locked-dashboard-card locked-loan-summary">
+                <div className="locked-section-title">
+                  <h3>LOAN SUMMARY</h3>
+                </div>
+
+                <div className="locked-loan-summary-grid">
+                  <div>
+                    <span>Total Loans</span>
+                    <strong>{loans.length}</strong>
+                  </div>
+                  <div>
+                    <span>Total Outstanding</span>
+                    <strong>
+                      {privateMoney(
+                        loans.reduce(
+                          (sum, loan) =>
+                            sum + Number(loan.outstanding || 0),
+                          0
+                        )
                       )}
-                    </h3>
+                    </strong>
                   </div>
-
-                  <div className="balance-status">
-                    <span className="status-dot" />
-                    {monthLabel}
-                  </div>
-                </div>
-
-                <div className="balance-divider" />
-
-                <div className="balance-summary">
-                  <div className="balance-stat">
-                    <div className="stat-icon income">
-                      ↗
-                    </div>
-
-                    <div>
-                      <span>
-                        Income
-                      </span>
-
-                      <strong>
-                        {money(
-                          monthIncomeTotal
-                        )}
-                      </strong>
-                    </div>
-                  </div>
-
-                  <div className="balance-stat">
-                    <div className="stat-icon expense">
-                      ↘
-                    </div>
-
-                    <div>
-                      <span>
-                        Expenses
-                      </span>
-
-                      <strong>
-                        {money(
-                          monthExpenseTotal
-                        )}
-                      </strong>
-                    </div>
-                  </div>
-
-                  <div className="balance-stat">
-                    <div className="stat-icon saving">
-                      ◇
-                    </div>
-
-                    <div>
-                      <span>
-                        Savings
-                      </span>
-
-                      <strong>
-                        {money(
-                          monthSavings
-                        )}
-                      </strong>
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <section className="dashboard-section">
-                <div className="section-heading">
                   <div>
-                    <span>
-                      GET STARTED
-                    </span>
-
-                    <h3>
-                      Quick Actions
-                    </h3>
+                    <span>Total EMI / Month</span>
+                    <strong>
+                      {privateMoney(
+                        loans.reduce(
+                          (sum, loan) => sum + Number(loan.emi || 0),
+                          0
+                        )
+                      )}
+                    </strong>
                   </div>
-                </div>
-
-                <div className="quick-actions">
-                  <button
-                    className="action-card expense-action"
-                    onClick={() =>
-                      openExpense()
-                    }
-                  >
-                    <div className="action-icon">
-                      ↘
-                    </div>
-
-                    <div className="action-content">
-                      <strong>
-                        Add Expense
-                      </strong>
-
-                      <span>
-                        Track daily
-                        spending
-                      </span>
-                    </div>
-
-                    <span className="card-arrow">
-                      →
-                    </span>
-                  </button>
-
-                  <button
-                    className="action-card income-action"
-                    onClick={() =>
-                      openIncome()
-                    }
-                  >
-                    <div className="action-icon">
-                      ↗
-                    </div>
-
-                    <div className="action-content">
-                      <strong>
-                        Add Income
-                      </strong>
-
-                      <span>
-                        Record your
-                        income
-                      </span>
-                    </div>
-
-                    <span className="card-arrow">
-                      →
-                    </span>
-                  </button>
-
-                  <button
-                    className="action-card loan-action"
-                    onClick={() =>
-                      openLoan()
-                    }
-                  >
-                    <div className="action-icon">
-                      ＋
-                    </div>
-
-                    <div className="action-content">
-                      <strong>
-                        Add Loan
-                      </strong>
-
-                      <span>
-                        Track your
-                        loans
-                      </span>
-                    </div>
-
-                    <span className="card-arrow">
-                      →
-                    </span>
-                  </button>
-                </div>
-              </section>
-
-              <section className="dashboard-section">
-                <div className="section-heading">
                   <div>
-                    <span>
-                      YOUR FINANCES
-                    </span>
-
-                    <h3>
-                      Finance Snapshot
-                    </h3>
+                    <span>Interest Paid</span>
+                    <strong>
+                      {privateMoney(
+                        emiPayments.reduce(
+                          (sum, item) =>
+                            sum + Number(item.interestPaid || 0),
+                          0
+                        )
+                      )}
+                    </strong>
                   </div>
-                </div>
-
-                <div className="finance-grid">
-                  <button
-                    className="finance-card"
-                    onClick={() =>
-                      setActivePage(
-                        "expenses"
-                      )
-                    }
-                  >
-                    <div className="finance-card-top">
-                      <div className="finance-icon expenses-icon">
-                        ◈
-                      </div>
-
-                      <span className="card-arrow">
-                        →
-                      </span>
-                    </div>
-
-                    <div className="finance-info">
-                      <span>
-                        Daily Expenses
-                      </span>
-
-                      <strong>
-                        {money(
-                          totalExpenses
-                        )}
-                      </strong>
-
-                      <small>
-                        Total tracked
-                      </small>
-                    </div>
-                  </button>
-
-                  <button
-                    className="finance-card"
-                    onClick={() =>
-                      setActivePage(
-                        "loans"
-                      )
-                    }
-                  >
-                    <div className="finance-card-top">
-                      <div className="finance-icon loans-icon">
-                        ▣
-                      </div>
-
-                      <span className="card-arrow">
-                        →
-                      </span>
-                    </div>
-
-                    <div className="finance-info">
-                      <span>
-                        Loans
-                      </span>
-
-                      <strong>
-                        {
-                          loans.filter(
-                            (x) =>
-                              (x.status ||
-                                "Active") !==
-                              "Closed"
-                          ).length
-                        }
-                      </strong>
-
-                      <small>
-                        Active Loans
-                      </small>
-                    </div>
-                  </button>
-                </div>
-              </section>
-
-              <section className="dashboard-section">
-                <div className="section-heading">
                   <div>
-                    <span>
-                      LOAN TRACKING
-                    </span>
-
-                    <h3>
-                      Upcoming EMI
-                    </h3>
+                    <span>Principal Paid</span>
+                    <strong>
+                      {privateMoney(
+                        emiPayments.reduce(
+                          (sum, item) =>
+                            sum + Number(item.principalPaid || 0),
+                          0
+                        )
+                      )}
+                    </strong>
                   </div>
-
                   <button
-                    className="view-link"
-                    onClick={() =>
-                      setActivePage(
-                        "loans"
-                      )
-                    }
+                    type="button"
+                    onClick={() => setActivePage("loans")}
                   >
                     View Loans →
                   </button>
                 </div>
-
-                {upcomingLoan ? (
-                  <div className="emi-card">
-                    <div className="emi-icon">
-                      ◷
-                    </div>
-
-                    <div className="emi-content">
-                      <strong>
-                        {
-                          upcomingLoan.loanName
-                        }
-                      </strong>
-
-                      <span>
-                        EMI{" "}
-                        {money(
-                          upcomingLoan.emi
-                        )}{" "}
-                        {upcomingLoan.nextEmiDate
-                          ? `• Due ${upcomingLoan.nextEmiDate}`
-                          : ""}
-                      </span>
-                    </div>
-
-                    <button
-                      className="paid-btn"
-                      disabled={saving}
-                      onClick={() =>
-                        markEmiPaid(
-                          upcomingLoan
-                        )
-                      }
-                    >
-                      ✓ Paid
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    className="emi-card"
-                    onClick={() =>
-                      openLoan()
-                    }
-                  >
-                    <div className="emi-icon">
-                      ◷
-                    </div>
-
-                    <div className="emi-content">
-                      <strong>
-                        No upcoming EMI
-                      </strong>
-
-                      <span>
-                        Add a loan to
-                        start tracking
-                        your EMI
-                        payments
-                      </span>
-                    </div>
-
-                    <span className="card-arrow">
-                      →
-                    </span>
-                  </button>
-                )}
               </section>
-
-              <section className="dashboard-section recent-section">
-                <div className="section-heading">
-                  <div>
-                    <span>
-                      ACTIVITY
-                    </span>
-
-                    <h3>
-                      Recent Transactions
-                    </h3>
-                  </div>
-
-                  <button
-                    className="view-link"
-                    onClick={() =>
-                      setActivePage(
-                        "expenses"
-                      )
-                    }
-                  >
-                    View All →
-                  </button>
-                </div>
-
-                {transactions.length ? (
-                  <div className="transaction-list">
-                    {transactions.map(
-                      (t) => (
-                        <div
-                          className="transaction-item"
-                          key={`${t.type}-${t.id}`}
-                        >
-                          <div
-                            className={`transaction-icon ${
-                              t.type ===
-                              "income"
-                                ? "income-transaction"
-                                : ""
-                            }`}
-                          >
-                            {t.type ===
-                            "income"
-                              ? "↗"
-                              : "↘"}
-                          </div>
-
-                          <div className="transaction-details">
-                            <strong>
-                              {t.title}
-                            </strong>
-
-                            <span>
-                              {t.note ||
-                                t.paymentMode}
-                            </span>
-                          </div>
-
-                          <div className="transaction-right">
-                            <strong>
-                              {t.type ===
-                              "income"
-                                ? "+"
-                                : "-"}{" "}
-                              {money(
-                                t.amount
-                              )}
-                            </strong>
-
-                            <span>
-                              {t.date}
-                            </span>
-                          </div>
-                                                    <div className="transaction-actions">
-                            <button
-                              type="button"
-                              className="mini-btn"
-                              title="Edit"
-                              onClick={() =>
-                                t.type === "income"
-                                  ? openIncome(t)
-                                  : openExpense(t)
-                              }
-                            >
-                              ✎
-                            </button>
-
-                            <button
-                              type="button"
-                              className="delete-expense"
-                              title="Delete"
-                              onClick={() =>
-                                t.type === "income"
-                                  ? deleteIncome(t.id)
-                                  : deleteExpense(t.id)
-                              }
-                            >
-                              ×
-                            </button>
-                          </div>
-                          </div>
-                      )
-                    )}
-                  </div>
-                ) : (
-                  <div className="empty-transactions">
-                    <div className="empty-icon">
-                      ◇
-                    </div>
-
-                    <h4>
-                      No transactions yet
-                    </h4>
-
-                    <p>
-                      Your recent income
-                      and expenses will
-                      appear here.
-                    </p>
-
-                    <button
-                      className="primary-btn"
-                      onClick={() =>
-                        openExpense()
-                      }
-                    >
-                      ＋ Add Expense
-                    </button>
-                  </div>
-                )}
-              </section>
-            </>
+            </div>
           )}
 
-          {activePage === "expenses" && (
+          {activePage === "income" && (
             <>
               <PageHead
-                eyebrow="EXPENSE MANAGEMENT"
-                title="Daily Expenses"
-                text="Track and manage every expense"
-                action="＋ Add Expense"
-                onAction={() =>
-                  openExpense()
-                }
+                eyebrow="INCOME MANAGEMENT"
+                title="Income History"
+                text="Track and manage every income entry"
+                action="＋ Add Income"
+                onAction={() => openIncome()}
               />
 
               <div className="stats-row">
                 <Stat
-                  label="All Expenses"
-                  value={money(
-                    totalExpenses
-                  )}
-                  note={`${expenses.length} transactions`}
+                  label="All Income"
+                  value={money(totalIncome)}
+                  note={`${incomes.length} transactions`}
                 />
 
                 <Stat
-                  label={`${monthLabel} Expenses`}
-                  value={money(
-                    monthExpenseTotal
-                  )}
-                  note={`${monthExpenses.length} transactions`}
+                  label={`${monthLabel} Income`}
+                  value={money(monthIncomeTotal)}
+                  note={`${monthIncomes.length} transactions`}
                 />
 
                 <Stat
-                  label="Average Expense"
+                  label="Average Income"
                   value={money(
-                    expenses.length
-                      ? totalExpenses /
-                          expenses.length
-                      : 0
+                    incomes.length ? totalIncome / incomes.length : 0
                   )}
                   note="Per transaction"
                 />
               </div>
 
               <div className="filter-bar">
-  <input
-    className="form-input"
-    placeholder="🔎 Search category or note..."
-    value={search}
-    onChange={(e) =>
-      setSearch(e.target.value)
-    }
-  />
+                <input
+                  className="form-input"
+                  placeholder="🔎 Search source or note..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
 
-  <select
-    className="form-input"
-    value={filterCategory}
-    onChange={(e) =>
-      setFilterCategory(e.target.value)
-    }
-  >
-    <option value="All">All Categories</option>
+                <select
+                  className="form-input"
+                  value={filterMode}
+                  onChange={(e) => setFilterMode(e.target.value)}
+                >
+                  <option value="All">All Payment Modes</option>
+                  {paymentModes.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
 
-    {categories.map((c) => (
-      <option key={c} value={c}>
-        {c}
-      </option>
-    ))}
-  </select>
+                <select
+                  className="form-input"
+                  value={periodType}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setPeriodType(next);
+                    if (next === "yearly") {
+                      setFilterYear(month.split("-")[0] || String(new Date().getFullYear()));
+                    }
+                  }}
+                >
+                  <option value="monthly">Monthly</option>
+                  <option value="yearly">Yearly</option>
+                  <option value="custom">Custom Range</option>
+                  <option value="all">All</option>
+                </select>
 
-  <select
-    className="form-input"
-    value={filterMode}
-    onChange={(e) =>
-      setFilterMode(e.target.value)
-    }
-  >
-    <option value="All">All Payment Modes</option>
+                {periodType === "monthly" && (
+                  <input
+                    className="form-input"
+                    type="month"
+                    value={month}
+                    onChange={(e) => setMonth(e.target.value)}
+                  />
+                )}
 
-    {paymentModes.map((m) => (
-      <option key={m} value={m}>
-        {m}
-      </option>
-    ))}
-  </select>
+                {periodType === "yearly" && (
+                  <select
+                    className="form-input"
+                    value={filterYear}
+                    onChange={(e) => setFilterYear(e.target.value)}
+                  >
+                    {Array.from(
+                      { length: 2099 - 2024 + 1 },
+                      (_, i) => 2024 + i
+                    ).map((year) => (
+                      <option key={year} value={year}>
+                        {year}
+                      </option>
+                    ))}
+                  </select>
+                )}
 
-  <select
-    className="form-input"
-    value={filterMonth}
-    onChange={(e) => setFilterMonth(e.target.value)}
-  >
-    <option value="All">All Months</option>
+                {periodType === "custom" && (
+                  <>
+                    <input
+                      className="form-input"
+                      type="date"
+                      value={customFrom}
+                      onChange={(e) => setCustomFrom(e.target.value)}
+                      title="From date"
+                    />
+                    <input
+                      className="form-input"
+                      type="date"
+                      value={customTo}
+                      min={customFrom || undefined}
+                      onChange={(e) => setCustomTo(e.target.value)}
+                      title="To date"
+                    />
+                  </>
+                )}
 
-    {Array.from(
-      new Set(
-        expenses.map((x) => String(x.date || "").slice(0, 7))
-      )
-    )
-      .filter(Boolean)
-      .sort()
-      .reverse()
-      .map((m) => (
-        <option key={m} value={m}>
-          {m}
-        </option>
-      ))}
-  </select>
-
-  <input
-    className="form-input"
-    type="date"
-    value={filterDate}
-    onChange={(e) => setFilterDate(e.target.value)}
-    title="Filter by exact date"
-  />
-
-  <button
-    type="button"
-    className="secondary-btn"
-    onClick={() => {
-      setSearch("");
-      setFilterCategory("All");
-      setFilterMode("All");
-      setFilterMonth("All");
-      setFilterDate("");
-    }}
-  >
-    Clear Filters
-  </button>
-</div>
+                <button
+                  type="button"
+                  className="secondary-btn"
+                  onClick={() => {
+                    setSearch("");
+                    setFilterMode("All");
+                    setPeriodType("monthly");
+                    setMonth(getMonthKey(getToday()));
+                    setFilterYear(String(new Date().getFullYear()));
+                    setCustomFrom("");
+                    setCustomTo("");
+                  }}
+                >
+                  Clear Filters
+                </button>
+              </div>
 
               <div className="transaction-list">
-                {filteredExpenses.length ? (
-                  filteredExpenses.map(
-                    (x) => (
-                      <div
-                        className="transaction-item"
-                        key={x.id}
-                      >
-                        <div className="transaction-icon">
-                          ↘
-                        </div>
+                {filteredIncomes.length ? (
+                  filteredIncomes.map((x) => (
+                    <div className="transaction-item" key={x.id}>
+                      <div className="transaction-icon">↗</div>
 
-                        <div className="transaction-details">
-                          <strong>
-                            {x.category}
-                          </strong>
-
-                          <span>
-                            {x.note ||
-                              x.paymentMode}
-                          </span>
-                        </div>
-
-                        <div className="transaction-right">
-                          <strong>
-                            -{" "}
-                            {money(
-                              x.amount
-                            )}
-                          </strong>
-
-                          <span>
-                            {x.date}
-                          </span>
-                          
-                        </div>
-
-                        <button
-                          className="mini-btn"
-                          onClick={() =>
-                            openExpense(
-                              x
-                            )
-                          }
-                        >
-                          ✎
-                        </button>
-
-                        <button
-                          className="delete-expense"
-                          onClick={() =>
-                            deleteExpense(
-                              x.id
-                            )
-                          }
-                        >
-                          ×
-                        </button>
+                      <div className="transaction-details">
+                        <strong>{x.source}</strong>
+                        <span>{x.note || x.paymentMode}</span>
                       </div>
-                    )
-                  )
+
+                      <div className="transaction-right">
+                        <strong>+ {money(x.amount)}</strong>
+                        <span>{x.date}</span>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="mini-btn"
+                        title="Edit income"
+                        onClick={() => openIncome(x)}
+                      >
+                        ✎
+                      </button>
+
+                      <button
+                        type="button"
+                        className="delete-expense"
+                        title="Delete income"
+                        onClick={() => deleteIncome(x.id)}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))
                 ) : (
                   <div className="empty-transactions">
-                    <div className="empty-icon">
-                      ◇
-                    </div>
-
-                    <h4>
-                      No matching
-                      expenses
-                    </h4>
-
-                    <p>
-                      Try another
-                      filter or add a
-                      new expense.
-                    </p>
+                    <div className="empty-icon">◇</div>
+                    <h4>No matching income</h4>
+                    <p>Add income or change the selected filters.</p>
+                    <button
+                      type="button"
+                      className="primary-btn"
+                      onClick={() => openIncome()}
+                    >
+                      ＋ Add Income
+                    </button>
                   </div>
                 )}
               </div>
             </>
+          )}
+
+          {activePage === "expenses" && (
+            <section
+              className={`daily-ledger-page ${
+                ledgerComposerOpen ? "ledger-composer-is-open" : ""
+              }`}
+            >
+              <PageHead
+                eyebrow="MONEY JOURNAL"
+                title="Day to Day Expenses"
+                text="Your income, spending and running balance in one place"
+              />
+
+              <div className="ledger-tabs" role="tablist" aria-label="Expense period">
+                <button
+                  type="button"
+                  className="ledger-pencil-tab"
+                  aria-label="Open quick entry"
+                  title="Quick entry"
+                  onClick={() => {
+                    setExpenseLedgerView("daily");
+                    openLedgerComposer("expense");
+                  }}
+                >
+                  ✎
+                </button>
+
+                {[
+                  ["daily", "Daily"],
+                  ["monthly", "Monthly"],
+                  ["yearly", "Yearly"],
+                ].map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    role="tab"
+                    aria-selected={expenseLedgerView === value}
+                    className={expenseLedgerView === value ? "active" : ""}
+                    onClick={() => {
+                      setExpenseLedgerView(value);
+                      setLedgerPeriodPicker(null);
+                      if (value !== "daily") setLedgerComposerOpen(false);
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {expenseLedgerView === "daily" ? (
+                <>
+                  <div className="ledger-daily-date-card">
+                    <button
+                      type="button"
+                      className="ledger-period-arrow"
+                      aria-label="Previous day"
+                      onClick={() => shiftExpenseLedgerPeriod(-1)}
+                    >
+                      ‹
+                    </button>
+
+                    <label className="ledger-day-picker" title="Select date">
+                      <strong>{ledgerDayNumber}</strong>
+                      <input
+                        type="date"
+                        value={expenseLedgerDate}
+                        onChange={(e) =>
+                          setExpenseLedgerDate(e.target.value || getToday())
+                        }
+                        aria-label="Select ledger date"
+                      />
+                    </label>
+
+                    <div className="ledger-date-selectors">
+                      <div>
+                        <label>
+                          <select
+                            value={ledgerSelectedMonth}
+                            onChange={(e) =>
+                              updateExpenseLedgerDate({
+                                monthNumber: Number(e.target.value),
+                              })
+                            }
+                            aria-label="Select month"
+                          >
+                            {dashboardMonths.map(([value, label]) => (
+                              <option key={value} value={value}>
+                                {label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <label>
+                          <select
+                            value={ledgerSelectedYear}
+                            onChange={(e) =>
+                              updateExpenseLedgerDate({
+                                year: Number(e.target.value),
+                              })
+                            }
+                            aria-label="Select year"
+                          >
+                            {dashboardYears.map((year) => (
+                              <option key={year} value={year}>
+                                {year}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                      <span>{ledgerWeekday}</span>
+                    </div>
+
+                    <div className="ledger-date-balance">
+                      <span>Balance</span>
+                      <strong>{privateMoney(expenseLedgerData.balance)}</strong>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="ledger-period-arrow"
+                      aria-label="Next day"
+                      onClick={() => shiftExpenseLedgerPeriod(1)}
+                    >
+                      ›
+                    </button>
+                  </div>
+
+                  <div className="ledger-carry-forward">
+                    <span>C/F</span>
+                    <strong>{privateMoney(expenseLedgerData.carryForward)}</strong>
+                  </div>
+
+                  <div className="ledger-section ledger-credit">
+                    <div className="ledger-section-head">
+                      <div><span className="ledger-dot" />Income (Credit)</div>
+                      <strong>{privateMoney(expenseLedgerData.credit)}</strong>
+                    </div>
+                    <div className="ledger-items">
+                      {expenseLedgerData.incomes.length ? (
+                        expenseLedgerData.incomes.map((item) => (
+                          <div className="ledger-item" key={item.id}>
+                            <div>
+                              <strong>{item.source}</strong>
+                              <span>{item.note || item.paymentMode} · {item.date}</span>
+                            </div>
+                            <strong className="credit-amount">
+                              + {privateMoney(item.amount)}
+                            </strong>
+                            <button
+                              type="button"
+                              className="mini-btn"
+                              aria-label={`Edit ${item.source}`}
+                              onClick={() => openIncome(item)}
+                            >
+                              ✎
+                            </button>
+                            <button
+                              type="button"
+                              className="delete-expense"
+                              aria-label={`Delete ${item.source}`}
+                              onClick={() => deleteIncome(item.id)}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))
+                      ) : (
+                        <button
+                          type="button"
+                          className="ledger-empty ledger-empty-action"
+                          onClick={() => openLedgerComposer("income")}
+                        >
+                          Tap on <b>＋</b> to add a new income entry.
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="ledger-section ledger-debit">
+                    <div className="ledger-section-head">
+                      <div><span className="ledger-dot" />Expense (Debit)</div>
+                      <strong>{privateMoney(expenseLedgerData.debit)}</strong>
+                    </div>
+                    <div className="ledger-items">
+                      {expenseLedgerData.expenses.length ? (
+                        expenseLedgerData.expenses.map((item) => (
+                          <div className="ledger-item" key={item.id}>
+                            <div>
+                              <strong>{item.note || item.category}</strong>
+                              <span>{item.category} · {item.paymentMode} · {item.date}</span>
+                            </div>
+                            <strong className="debit-amount">
+                              - {privateMoney(item.amount)}
+                            </strong>
+                            <button
+                              type="button"
+                              className="mini-btn"
+                              aria-label={`Edit ${item.note || item.category}`}
+                              onClick={() => openExpense(item)}
+                            >
+                              ✎
+                            </button>
+                            <button
+                              type="button"
+                              className="delete-expense"
+                              aria-label={`Delete ${item.note || item.category}`}
+                              onClick={() => deleteExpense(item.id)}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))
+                      ) : (
+                        <button
+                          type="button"
+                          className="ledger-empty ledger-empty-action"
+                          onClick={() => openLedgerComposer("expense")}
+                        >
+                          Tap on <b>＋</b> to add a new expense entry.
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="ledger-overview-period">
+                    <button
+                      type="button"
+                      className="ledger-period-arrow"
+                      aria-label={`Previous ${expenseLedgerView}`}
+                      onClick={() => shiftExpenseLedgerPeriod(-1)}
+                    >
+                      ‹
+                    </button>
+
+                    <div
+                      className={`ledger-overview-selectors ${expenseLedgerView}`}
+                    >
+                      {expenseLedgerView === "monthly" && (
+                        <button
+                          type="button"
+                          className="ledger-overview-select-control"
+                          onClick={() => openLedgerPeriodPicker("month")}
+                          aria-label={`Select month, currently ${ledgerSelectedMonthLabel}`}
+                        >
+                          <span>Month</span>
+                          <strong>{ledgerSelectedMonthLabel}</strong>
+                          <b aria-hidden="true">⌄</b>
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        className="ledger-overview-select-control"
+                        onClick={() => openLedgerPeriodPicker("year")}
+                        aria-label={`Select year, currently ${ledgerSelectedYear}`}
+                      >
+                        <span>Year</span>
+                        <strong>{ledgerSelectedYear}</strong>
+                        <b aria-hidden="true">⌄</b>
+                      </button>
+
+                      <small>
+                        {expenseLedgerView === "monthly"
+                          ? "Monthly Overview"
+                          : "Yearly Overview"}
+                      </small>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="ledger-period-arrow"
+                      aria-label={`Next ${expenseLedgerView}`}
+                      onClick={() => shiftExpenseLedgerPeriod(1)}
+                    >
+                      ›
+                    </button>
+                  </div>
+
+                  <div
+                    className={`ledger-overview-summary ledger-sticky-summary ${expenseLedgerView}`}
+                    aria-label={`${expenseLedgerView} totals`}
+                  >
+                    <div className="ledger-summary-cell credit">
+                      <span>Total Income (Credit)</span>
+                      <strong>{privateMoney(expenseLedgerData.credit)}</strong>
+                    </div>
+                    <div className="ledger-summary-cell debit">
+                      <span>Total Expense (Debit)</span>
+                      <strong>{privateMoney(expenseLedgerData.debit)}</strong>
+                    </div>
+                    <div className="ledger-summary-cell carry">
+                      <span>C/F</span>
+                      <strong>{privateMoney(expenseLedgerData.carryForward)}</strong>
+                    </div>
+                    <div className="ledger-summary-cell balance">
+                      <span>Balance</span>
+                      <strong>{privateMoney(expenseLedgerData.balance)}</strong>
+                    </div>
+                  </div>
+
+                  {expenseLedgerView === "yearly" ? (
+                    <div className="ledger-yearly-table-wrap">
+                      <table className="ledger-yearly-table">
+                        <thead>
+                          <tr>
+                            <th>Month</th>
+                            <th>Income</th>
+                            <th>Expense</th>
+                            <th>Balance</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {yearlyOverviewRows.map((row) => (
+                            <tr key={row.monthValue}>
+                              <th scope="row">{row.monthLabel}</th>
+                              <td className="credit-amount">
+                                {privateMoney(row.income)}
+                              </td>
+                              <td className="debit-amount">
+                                {privateMoney(row.expense)}
+                              </td>
+                              <td
+                                className={
+                                  row.balance < 0 ? "debit-amount" : "balance-amount"
+                                }
+                              >
+                                {privateMoney(row.balance)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr>
+                            <th scope="row">Year Total</th>
+                            <td>{privateMoney(yearlyOverviewTotal.income)}</td>
+                            <td>{privateMoney(yearlyOverviewTotal.expense)}</td>
+                            <td>{privateMoney(yearlyOverviewTotal.balance)}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="ledger-monthly-days">
+                        {monthlyLedgerDayGroups.length ? (
+                          monthlyLedgerDayGroups.map((group) => (
+                            <article className="ledger-month-day-card" key={group.date}>
+                              <header>
+                                <strong>{formatLedgerDayHeading(group.date)}</strong>
+                              </header>
+
+                              <div className="ledger-month-day-columns">
+                                <section className="credit">
+                                  <h4>
+                                    <span>Income (Credit)</span>
+                                    <strong>{privateMoney(group.incomeTotal)}</strong>
+                                  </h4>
+
+                                  {group.incomes.length ? (
+                                    group.incomes.map((entry) => (
+                                      <div className="ledger-month-entry" key={entry.key}>
+                                        <span>
+                                          <strong>{entry.entryName}</strong>
+                                          <small>
+                                            {entry.category} · {entry.paymentMode}
+                                          </small>
+                                        </span>
+                                        <b>+ {privateMoney(entry.amount)}</b>
+                                      </div>
+                                    ))
+                                  ) : (
+                                    <p>No income</p>
+                                  )}
+                                </section>
+
+                                <section className="debit">
+                                  <h4>
+                                    <span>Expense (Debit)</span>
+                                    <strong>{privateMoney(group.expenseTotal)}</strong>
+                                  </h4>
+
+                                  {group.expenses.length ? (
+                                    group.expenses.map((entry) => (
+                                      <div className="ledger-month-entry" key={entry.key}>
+                                        <span>
+                                          <strong>{entry.entryName}</strong>
+                                          <small>
+                                            {entry.category} · {entry.paymentMode}
+                                          </small>
+                                        </span>
+                                        <b>- {privateMoney(entry.amount)}</b>
+                                      </div>
+                                    ))
+                                  ) : (
+                                    <p>No expense</p>
+                                  )}
+                                </section>
+                              </div>
+
+                              <footer>
+                                <span>Balance</span>
+                                <strong className={group.balance < 0 ? "negative" : ""}>
+                                  {privateMoney(group.balance)}
+                                </strong>
+                              </footer>
+                            </article>
+                          ))
+                        ) : (
+                          <div className="ledger-monthly-empty">
+                            No income or expense entries for {ledgerMonthYearLabel}.
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+
+                  <section className="ledger-print-statement">
+                    <header className="ledger-print-header">
+                      <div>
+                        <span>MAZA HISHOB</span>
+                        <h1>
+                          {expenseLedgerView === "monthly" ? "Monthly" : "Yearly"}
+                          {" "}Expense Statement
+                        </h1>
+                      </div>
+                      <p>
+                        <strong>Period:</strong> {ledgerStatementPeriodLabel}
+                      </p>
+                    </header>
+
+                    <div className="ledger-print-summary">
+                      <div>
+                        <span>Carry Forward</span>
+                        <strong>{money(expenseLedgerData.carryForward)}</strong>
+                      </div>
+                      <div>
+                        <span>Total Income</span>
+                        <strong>{money(expenseLedgerData.credit)}</strong>
+                      </div>
+                      <div>
+                        <span>Total Expense</span>
+                        <strong>{money(expenseLedgerData.debit)}</strong>
+                      </div>
+                      <div>
+                        <span>Closing Balance</span>
+                        <strong>{money(expenseLedgerData.balance)}</strong>
+                      </div>
+                    </div>
+
+                    <table className="ledger-print-table">
+                      <thead>
+                        <tr>
+                          <th>Date</th>
+                          <th>Type</th>
+                          <th>Entry Name / Description</th>
+                          <th>Category / Source</th>
+                          <th>Payment Mode</th>
+                          <th>Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ledgerStatementEntries.map((entry) => (
+                          <tr key={`print-${entry.key}`}>
+                            <td>{formatLedgerPrintDate(entry.date)}</td>
+                            <td>{entry.type}</td>
+                            <td>{entry.entryName}</td>
+                            <td>{entry.category}</td>
+                            <td>{entry.paymentMode}</td>
+                            <td className={entry.type === "Income" ? "credit" : "debit"}>
+                              {entry.type === "Income" ? "+ " : "- "}
+                              {money(entry.amount)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+
+                    <footer className="ledger-print-footer">
+                      <span>{ledgerStatementEntries.length} individual entries</span>
+                      <span>Generated {new Date().toLocaleString("en-IN")}</span>
+                    </footer>
+                  </section>
+                </>
+              )}
+
+              {!ledgerComposerOpen && (
+                <button
+                  type="button"
+                  className={`ledger-floating-action ${
+                    expenseLedgerView === "daily" ? "add" : "pdf"
+                  }`}
+                  aria-label={
+                    expenseLedgerView === "daily"
+                      ? "Add ledger entry"
+                      : "Print or save report as PDF"
+                  }
+                  title={
+                    expenseLedgerView === "daily"
+                      ? "Add entry"
+                      : "Print / Save PDF"
+                  }
+                  onClick={() => {
+                    if (expenseLedgerView === "daily") {
+                      openLedgerComposer("expense");
+                    } else {
+                      exportExpenseLedgerPdf();
+                    }
+                  }}
+                >
+                  {expenseLedgerView === "daily" ? (
+                    "+"
+                  ) : (
+                    <><span>▣</span><small>PDF</small></>
+                  )}
+                </button>
+              )}
+
+              {ledgerComposerOpen && expenseLedgerView === "daily" && (
+                <aside
+                  className="ledger-quick-composer"
+                  aria-label="Quick income or expense entry"
+                >
+                  <button
+                    type="button"
+                    className="ledger-composer-collapse"
+                    aria-label="Close quick entry"
+                    onClick={() => setLedgerComposerOpen(false)}
+                  >
+                   ⌄
+                  </button>
+
+                  <div className="ledger-entry-switch" role="tablist">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={ledgerEntryType === "income"}
+                      className={ledgerEntryType === "income" ? "active" : ""}
+                      onClick={() => changeLedgerEntryType("income")}
+                    >
+                      {ledgerEntryType === "income" && <span>✓</span>}
+                      Income (Credit)
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={ledgerEntryType === "expense"}
+                      className={ledgerEntryType === "expense" ? "active" : ""}
+                      onClick={() => changeLedgerEntryType("expense")}
+                    >
+                      {ledgerEntryType === "expense" && <span>✓</span>}
+                      Expense (Debit)
+                    </button>
+                  </div>
+
+                  <form onSubmit={saveLedgerQuickEntry}>
+                    <div className="ledger-quick-main-row">
+                      <label className="ledger-quick-field ledger-quick-name">
+                        <span>
+                          {ledgerEntryType === "expense" ? "Category" : "Income Source"}
+                        </span>
+                        <select
+                          value={ledgerQuickForm.name}
+                          onChange={(e) =>
+                            setLedgerQuickForm((current) => ({
+                              ...current,
+                              name: e.target.value,
+                            }))
+                          }
+                        >
+                          {(ledgerEntryType === "expense" ? categories : incomeSources).map(
+                            (item) => (
+                              <option key={item} value={item}>
+                                {item}
+                              </option>
+                            )
+                          )}
+                        </select>
+                      </label>
+
+                      <label className="ledger-quick-field ledger-quick-amount">
+                        <span>Amount</span>
+                        <div>
+                          <b>₹</b>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            required
+                            value={ledgerQuickForm.amount}
+                            onChange={(e) =>
+                              setLedgerQuickForm((current) => ({
+                                ...current,
+                                amount: e.target.value,
+                              }))
+                            }
+                            placeholder="0.00"
+                          />
+                        </div>
+                      </label>
+
+                      <button
+                        type="submit"
+                        className="ledger-quick-save"
+                        disabled={saving}
+                        aria-label="Save entry"
+                      >
+                        {saving ? "…" : "✓"}
+                      </button>
+                    </div>
+
+                    <div className="ledger-quick-detail-row">
+                      <div className="ledger-quick-description">
+                        <span aria-hidden="true">✎</span>
+                        <input
+                          type="text"
+                          value={ledgerQuickForm.description}
+                          onChange={(e) => {
+                            setLedgerQuickForm((current) => ({
+                              ...current,
+                              description: e.target.value,
+                            }));
+                            setLedgerSuggestionOpen(true);
+                          }}
+                          onFocus={() => setLedgerSuggestionOpen(true)}
+                          onBlur={() => {
+                            window.setTimeout(() => setLedgerSuggestionOpen(false), 140);
+                          }}
+                          placeholder="Description"
+                          autoComplete="off"
+                          role="combobox"
+                          aria-autocomplete="list"
+                          aria-expanded={
+                            ledgerSuggestionOpen && matchingLedgerSuggestions.length > 0
+                          }
+                          aria-controls="ledger-quick-suggestion-list"
+                        />
+
+                        {ledgerSuggestionOpen && matchingLedgerSuggestions.length > 0 && (
+                          <div
+                            id="ledger-quick-suggestion-list"
+                            className="expense-suggestion-menu ledger-quick-suggestions"
+                            role="listbox"
+                            aria-label="Previous entry suggestions"
+                          >
+                            {matchingLedgerSuggestions.map((suggestion) => (
+                              <button
+                                type="button"
+                                role="option"
+                                className="expense-suggestion-option"
+                                key={`${ledgerEntryType}-${suggestion.label}`}
+                                onPointerDown={(event) => event.preventDefault()}
+                                onClick={() => applyLedgerSuggestion(suggestion)}
+                              >
+                                <strong>{suggestion.label}</strong>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <label className="ledger-quick-mode">
+                        <span>Payment Mode</span>
+                        <select
+                          value={ledgerQuickForm.paymentMode}
+                          onChange={(e) =>
+                            setLedgerQuickForm((current) => ({
+                              ...current,
+                              paymentMode: e.target.value,
+                            }))
+                          }
+                        >
+                          {paymentModes.map((mode) => (
+                            <option key={mode} value={mode}>
+                              {mode}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    <small className="ledger-entry-date-note">
+                      Entry date: {new Date(`${expenseLedgerDate}T00:00:00`).toLocaleDateString(
+                        "en-IN",
+                        { day: "2-digit", month: "short", year: "numeric" }
+                      )}
+                    </small>
+                  </form>
+                </aside>
+              )}
+            </section>
           )}
 
           {activePage === "loans" && (
@@ -5244,36 +7250,17 @@ if (!session) {
   </div>
 )}
 {getPendingEmis(loan).length > 0 && (
-  <div
-    style={{
-      marginTop: "10px",
-      padding: "10px",
-      borderRadius: "10px",
-      background: "#fff4f4",
-    }}
-  >
-    <strong>
+  <div className="pending-emi-card">
+    <strong className="pending-emi-title">
       🔴 {getPendingEmis(loan).length} EMI Pending
     </strong>
 
-    <div
-      style={{
-        marginTop: "6px",
-        display: "flex",
-        flexDirection: "column",
-        gap: "4px",
-        fontSize: "12px",
-      }}
-    >
+    <div className="pending-emi-list">
       {getPendingEmis(loan).map(
         (p) => (
           <div
             key={`${p.loanId}-${p.dueDate}`}
-            style={{
-              display: "flex",
-              justifyContent:
-                "space-between",
-            }}
+            className="pending-emi-row"
           >
             <span>
               Due: {p.dueDate}
@@ -5506,56 +7493,89 @@ if (!session) {
       text="Simple view of your money"
     />
     <div className="report-filters">
-  <div className="filter-group">
-    <label>Month</label>
+      <div className="filter-group">
+        <label>Filter</label>
+        <select
+          className="form-input"
+          value={periodType}
+          onChange={(e) => {
+            const next = e.target.value;
+            setPeriodType(next);
+            if (next === "yearly") {
+              setFilterYear(month.split("-")[0] || String(new Date().getFullYear()));
+            }
+          }}
+        >
+          <option value="monthly">Monthly</option>
+          <option value="yearly">Yearly</option>
+          <option value="custom">Custom Range</option>
+          <option value="all">All</option>
+        </select>
+      </div>
 
-    <input
-      type="month"
-      className="form-input"
-      value={month}
-      onChange={(e) =>
-        setMonth(e.target.value)
-      }
-    />
-  </div>
+      {periodType === "monthly" && (
+        <div className="filter-group">
+          <label>Month</label>
+          <input
+            type="month"
+            className="form-input"
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+          />
+        </div>
+      )}
 
-  <div className="filter-group">
-  <label>Year</label>
+      {periodType === "yearly" && (
+        <div className="filter-group">
+          <label>Year</label>
+          <select
+            className="form-input"
+            value={filterYear}
+            onChange={(e) => setFilterYear(e.target.value)}
+          >
+            {Array.from(
+              { length: 2099 - 2024 + 1 },
+              (_, i) => 2024 + i
+            ).map((year) => (
+              <option key={year} value={year}>
+                {year}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
-  <select
-    className="form-input"
-    value={month.split("-")[0]}
-    onChange={(e) => {
-      const selectedMonth =
-        month.split("-")[1] || "01";
+      {periodType === "custom" && (
+        <>
+          <div className="filter-group">
+            <label>From Date</label>
+            <input
+              type="date"
+              className="form-input"
+              value={customFrom}
+              onChange={(e) => setCustomFrom(e.target.value)}
+            />
+          </div>
+          <div className="filter-group">
+            <label>To Date</label>
+            <input
+              type="date"
+              className="form-input"
+              value={customTo}
+              min={customFrom || undefined}
+              onChange={(e) => setCustomTo(e.target.value)}
+            />
+          </div>
+        </>
+      )}
 
-      setMonth(
-        `${e.target.value}-${selectedMonth}`
-      );
-    }}
-  >
-    {Array.from(
-      { length: 2099 - 2024 + 1 },
-      (_, i) => 2024 + i
-    ).map((year) => (
-      <option
-        key={year}
-        value={year}
-      >
-        {year}
-      </option>
-    ))}
-  </select>
-</div>
-
-  <div className="filter-group">
-    <label>Selected Period</label>
-
-    <strong className="filter-value">
-      {monthLabel}
-    </strong>
-  </div>
-</div>
+      <div className="filter-group">
+        <label>Selected Period</label>
+        <strong className="filter-value">
+          {monthLabel}
+        </strong>
+      </div>
+    </div>
 
    
     {/* =========================
@@ -5568,7 +7588,7 @@ if (!session) {
         value={money(
           monthIncomeTotal
         )}
-        note="Selected month"
+        note="Selected period"
       />
 
       <Stat
@@ -5576,7 +7596,7 @@ if (!session) {
         value={money(
           monthExpenseTotal
         )}
-        note="Selected month"
+        note="Selected period"
       />
 
       <Stat
@@ -5657,7 +7677,7 @@ if (!session) {
     </div>
   ) : (
     <p className="muted">
-      No expenses for this month.
+      No expenses for the selected period.
     </p>
   )}
 </section>
@@ -5764,7 +7784,7 @@ if (!session) {
           ))
       ) : (
         <p className="muted">
-          No expenses for this month.
+          No expenses for the selected period.
         </p>
       )}
     </section>
@@ -6126,6 +8146,126 @@ if (!session) {
         </main>
       </div>
 
+      {ledgerPeriodPicker && (
+        <div
+          className="ledger-period-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="ledger-period-dialog-title"
+        >
+          <button
+            type="button"
+            className="ledger-period-dialog-backdrop"
+            aria-label="Close period selection"
+            onClick={() => setLedgerPeriodPicker(null)}
+          />
+
+          <section className="ledger-period-dialog-card">
+            <header>
+              <div>
+                <span>EXPENSE OVERVIEW</span>
+                <h3 id="ledger-period-dialog-title">
+                  {ledgerPeriodPicker === "month" ? "Select month" : "Select year"}
+                </h3>
+              </div>
+              <button
+                type="button"
+                className="ledger-period-dialog-close"
+                aria-label="Close period selection"
+                onClick={() => setLedgerPeriodPicker(null)}
+              >
+                ×
+              </button>
+            </header>
+
+            {ledgerPeriodPicker === "month" ? (
+              <>
+                <strong className="ledger-picker-current-period">
+                  {dashboardMonths.find(([value]) => value === ledgerPickerMonth)?.[1]}
+                  {" "}
+                  {ledgerPickerYear}
+                </strong>
+
+                <div className="ledger-picker-year-stepper">
+                  <button
+                    type="button"
+                    aria-label="Previous year"
+                    onClick={() => setLedgerPickerYear((year) => year - 1)}
+                  >
+                    ‹
+                  </button>
+                  <strong>{ledgerPickerYear}</strong>
+                  <button
+                    type="button"
+                    aria-label="Next year"
+                    onClick={() => setLedgerPickerYear((year) => year + 1)}
+                  >
+                    ›
+                  </button>
+                </div>
+
+                <div className="ledger-month-picker-grid">
+                  {dashboardMonths.map(([value, label]) => (
+                    <button
+                      type="button"
+                      key={`ledger-picker-${value}`}
+                      className={ledgerPickerMonth === value ? "active" : ""}
+                      aria-pressed={ledgerPickerMonth === value}
+                      onClick={() => setLedgerPickerMonth(value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                <footer>
+                  <button
+                    type="button"
+                    className="ledger-picker-cancel"
+                    onClick={() => setLedgerPeriodPicker(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="ledger-picker-apply"
+                    onClick={applyLedgerMonthPicker}
+                  >
+                    Apply
+                  </button>
+                </footer>
+              </>
+            ) : (
+              <>
+                <div className="ledger-year-picker-grid">
+                  {ledgerPickerYears.map((year) => (
+                    <button
+                      type="button"
+                      key={`ledger-year-${year}`}
+                      className={ledgerSelectedYear === year ? "active" : ""}
+                      aria-pressed={ledgerSelectedYear === year}
+                      onClick={() => selectLedgerYear(year)}
+                    >
+                      {year}
+                    </button>
+                  ))}
+                </div>
+
+                <footer>
+                  <button
+                    type="button"
+                    className="ledger-picker-cancel"
+                    onClick={() => setLedgerPeriodPicker(null)}
+                  >
+                    Cancel
+                  </button>
+                </footer>
+              </>
+            )}
+          </section>
+        </div>
+      )}
+
       {sessionWarningOpen && (
         <div
           className="session-timeout-modal"
@@ -6136,18 +8276,19 @@ if (!session) {
           <div className="session-timeout-backdrop" />
 
           <div className="session-timeout-card">
-            <div className="session-timeout-icon">⌛</div>
+            <div className="session-timeout-icon" aria-hidden="true">5</div>
 
             <span className="eyebrow">SECURITY</span>
-            <h3 id="session-timeout-title">Session expiring soon</h3>
+            <h3 id="session-timeout-title">Still using Maza Hishob?</h3>
             <p>
-              For your privacy, Maza Hishob signs you out after
-              5 minutes of inactivity.
+              For your security, you will be signed out after 5 minutes of
+              inactivity.
             </p>
 
-            <strong className="session-timeout-countdown">
-              {sessionSecondsLeft}s
-            </strong>
+            <div className="session-timeout-countdown" aria-live="polite">
+              <strong>{sessionSecondsLeft}</strong>
+              <span>seconds remaining</span>
+            </div>
 
             <button
               type="button"
@@ -6213,7 +8354,22 @@ if (!session) {
                         )
                       }
                     >
-                      {c}
+                      <span className={`category-mini-icon category-${String(c).toLowerCase().replace(/\s+/g, "-")}`}>
+                        {c === "Food"
+                          ? "●"
+                          : c === "Grocery"
+                          ? "▣"
+                          : c === "Bills"
+                          ? "▤"
+                          : c === "Travel"
+                          ? "✈"
+                          : c === "Shopping"
+                          ? "◆"
+                          : c === "Medical"
+                          ? "+"
+                          : "•••"}
+                      </span>
+                      <span>{c}</span>
                     </button>
                   )
                 )}
@@ -6238,7 +8394,6 @@ if (!session) {
                       })
                     )
                   }
-                  disabled={!!editing}
                 />
               </Field>
 
@@ -6275,30 +8430,66 @@ if (!session) {
             <Field
               label={
                 <>
-                  Note{" "}
+                  Expense Name / Note{" "}
                   <span>
                     Optional
                   </span>
                 </>
               }
             >
-              <input
-                className="form-input"
-                value={
-                  expenseForm.note
-                }
-                onChange={(e) =>
-                  setExpenseForm(
-                    (p) => ({
-                      ...p,
-                      note:
-                        e.target
-                          .value,
-                    })
-                  )
-                }
-                placeholder="e.g. Dinner with family"
-              />
+              <div className="expense-note-autocomplete">
+                <input
+                  className="form-input"
+                  value={expenseForm.note}
+                  onChange={(e) => {
+                    setExpenseForm((current) => ({
+                      ...current,
+                      note: e.target.value,
+                    }));
+                    setExpenseSuggestionOpen(true);
+                  }}
+                  onFocus={() => setExpenseSuggestionOpen(true)}
+                  onBlur={() => {
+                    window.setTimeout(() => setExpenseSuggestionOpen(false), 140);
+                  }}
+                  placeholder="Start typing, e.g. Milk or Petrol"
+                  autoComplete="off"
+                  role="combobox"
+                  aria-autocomplete="list"
+                  aria-expanded={
+                    expenseSuggestionOpen && matchingExpenseSuggestions.length > 0
+                  }
+                  aria-controls="expense-suggestion-list"
+                />
+
+                {expenseSuggestionOpen && matchingExpenseSuggestions.length > 0 && (
+                  <div
+                    id="expense-suggestion-list"
+                    className="expense-suggestion-menu"
+                    role="listbox"
+                    aria-label="Previous expense suggestions"
+                  >
+                    {matchingExpenseSuggestions.map((suggestion) => (
+                      <button
+                        type="button"
+                        role="option"
+                        className="expense-suggestion-option"
+                        key={suggestion.note}
+                        onPointerDown={(event) => event.preventDefault()}
+                        onClick={() => applyExpenseSuggestion(suggestion)}
+                      >
+                        <strong>{suggestion.note}</strong>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {!editing && expenseSuggestions.length > 0 && (
+                <small className="expense-suggestion-hint">
+                  Select a previous entry name. Amount stays unchanged.
+                </small>
+              )}
             </Field>
 
             <Actions
