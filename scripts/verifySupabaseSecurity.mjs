@@ -29,6 +29,13 @@ for (const table of financialTables) {
     }
   );
 
+  if (response.status === 401 || response.status === 403) {
+    console.log(
+      `${table}: anonymous read is rejected (HTTP ${response.status})`
+    );
+    continue;
+  }
+
   if (!response.ok) {
     throw new Error(
       `${table}: schema/security check failed with HTTP ${response.status}.`
