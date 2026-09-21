@@ -1,9 +1,27 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { App as CapacitorApp } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
 import { Browser } from "@capacitor/browser";
 import "./App.css";
 import { supabase } from "./lib/supabase";
+import {
+  addMonthsClamped,
+  calculateEmiSettlement,
+  calculateRemainingTenure,
+} from "./domain/loanCalculations";
+import {
+  mapBackupToDatabaseRows,
+  restoreBackupWithRollback,
+  validateBackupData,
+} from "./domain/backup";
+import {
+  normalizeEmiPayment,
+  normalizeExpense,
+  normalizeIncome,
+  normalizeLoan,
+  normalizePrepaymentPayment,
+} from "./domain/normalizers";
+import { exportLedgerStatementPdf } from "./utils/ledgerPdf";
 import mazaHishobLogo from "./assets/maza-hishob-logo.png";
 import dashboardSafe from "./assets/dashboard-safe.svg";
 
@@ -259,14 +277,9 @@ function App() {
     const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
 
-  const [authMode, setAuthMode] = useState("login");
-
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [confirmPassword, setConfirmPassword] =
-    useState("");
 
   const [authError, setAuthError] = useState("");
   const [authSaving, setAuthSaving] = useState(false);
@@ -292,10 +305,7 @@ function App() {
   const [editing, setEditing] = useState(null);
 
   const [search, setSearch] = useState("");
-  const [filterCategory, setFilterCategory] = useState("All");
   const [filterMode, setFilterMode] = useState("All");
-  const [filterMonth, setFilterMonth] = useState("All");
-  const [filterDate, setFilterDate] = useState("");
   const [expenseLedgerView, setExpenseLedgerView] = useState("daily");
   const [expenseLedgerDate, setExpenseLedgerDate] = useState(getToday());
   const [ledgerComposerOpen, setLedgerComposerOpen] = useState(false);
@@ -315,13 +325,14 @@ function App() {
     paymentMode: "UPI",
   });
 
-  useEffect(() => {
-    if (activePage !== "expenses") {
+  const navigateTo = useCallback((page) => {
+    setActivePage(page);
+    if (page !== "expenses") {
       setLedgerComposerOpen(false);
       setLedgerSuggestionOpen(false);
       setLedgerPeriodPicker(null);
     }
-  }, [activePage]);
+  }, []);
 
   useEffect(() => {
     if (!ledgerPeriodPicker) return undefined;
@@ -422,7 +433,7 @@ function App() {
       presenceChannel.untrack().catch(() => {});
       supabase.removeChannel(presenceChannel);
     };
-  }, [session?.user?.id]);
+  }, [session?.user]);
 
 
   const [expenseForm, setExpenseForm] = useState({
@@ -675,12 +686,12 @@ useEffect(() => {
       sessionStorage.getItem("mh_drive_access_token_v2") || "";
 
     const currentDriveToken =
-      nextSession?.provider_token || storedDriveToken || driveAccessToken;
+      nextSession?.provider_token || storedDriveToken;
 
     const hasDriveToken = Boolean(currentDriveToken);
 
-    if (currentDriveToken && !driveAccessToken) {
-      setDriveAccessToken(currentDriveToken);
+    if (currentDriveToken) {
+      setDriveAccessToken((current) => current || currentDriveToken);
     }
 
     /*
@@ -908,7 +919,7 @@ const isGoogleAccount = Boolean(
     session?.user?.app_metadata?.providers?.includes?.("google")
 );
 
-const loadProfilePhoto = async () => {
+const loadProfilePhoto = useCallback(async () => {
   if (!session?.user?.id) {
     setProfilePhotoUrl("");
     return;
@@ -952,7 +963,7 @@ const loadProfilePhoto = async () => {
     console.error("Profile photo load error:", error);
     setProfilePhotoUrl("");
   }
-};
+}, [session?.user?.id]);
 
 const compressProfilePhoto = (file) =>
   new Promise((resolve, reject) => {
@@ -1104,7 +1115,7 @@ useEffect(() => {
   }
 
   loadProfilePhoto();
-}, [session?.user?.id]);
+}, [session?.user?.id, loadProfilePhoto]);
 
 
 /* =========================
@@ -1141,7 +1152,6 @@ const handleLogin = async (e) => {
 
     setUsername("");
     setPassword("");
-    setConfirmPassword("");
   } catch (error) {
     console.error("Login error:", error);
 
@@ -1156,115 +1166,10 @@ const handleLogin = async (e) => {
 
 
 /* =========================
-   CREATE USER
-========================= */
-
-const handleCreateUser = async (e) => {
-  e.preventDefault();
-
-  setAuthError("");
-
-  const cleanUsername =
-    username.trim().toLowerCase();
-
-  if (!cleanUsername || !password) {
-    setAuthError(
-      "Username and password are required."
-    );
-    return;
-  }
-
-  if (password.length < 6) {
-    setAuthError(
-      "Password must be at least 6 characters."
-    );
-    return;
-  }
-
-  if (password !== confirmPassword) {
-    setAuthError(
-      "Passwords do not match."
-    );
-    return;
-  }
-
-  setAuthSaving(true);
-
-  try {
-    const authEmail =
-      `${cleanUsername}@mazahishob.local`;
-
-    const {
-      data,
-      error,
-    } = await supabase.auth.signUp({
-      email: authEmail,
-      password,
-    });
-
-    if (error) {
-      throw error;
-    }
-
-    if (!data.user) {
-      throw new Error(
-        "Unable to create user."
-      );
-    }
-
-    const {
-      error: profileError,
-    } = await supabase
-      .from("profiles")
-      .insert({
-        id: data.user.id,
-        username: cleanUsername,
-      });
-
-    if (profileError) {
-      throw profileError;
-    }
-
-    /*
-      Sign out immediately after account creation.
-      This prevents the newly created user from
-      going directly to the dashboard.
-    */
-    await supabase.auth.signOut();
-
-    setSession(null);
-
-    setUsername("");
-    setPassword("");
-    setConfirmPassword("");
-
-    setLoading(false);
-    setAuthMode("login");
-
-    alert(
-      "User created successfully. Please login."
-    );
-  } catch (error) {
-    console.error(
-      "Create user error:",
-      error
-    );
-
-    setAuthError(
-      error.message ||
-        "Unable to create user."
-    );
-  } finally {
-    setAuthSaving(false);
-  }
-};
-
-
-/* =========================
    LOGOUT
 ========================= */
 
-const clearSignedInState = () => {
+const clearSignedInState = useCallback(() => {
   clearLastActivityAt();
   setSession(null);
   setExpenses([]);
@@ -1285,9 +1190,9 @@ const clearSignedInState = () => {
   sessionStorage.removeItem("mh_drive_access_token_v2");
   sessionStorage.removeItem("mh_drive_refresh_token_v2");
   setDriveAccessToken("");
-  setActivePage("home");
+  navigateTo("home");
   setLoading(false);
-};
+}, [navigateTo]);
 
 const handleLogout = async () => {
   try {
@@ -1460,7 +1365,7 @@ useEffect(() => {
     nativeAppStateListener?.remove();
     delete window.__mhStaySignedIn;
   };
-}, [session?.user?.id]);
+}, [session?.user?.id, clearSignedInState]);
 
 
 /* =========================
@@ -1469,7 +1374,7 @@ useEffect(() => {
 
 const SUPABASE_PAGE_SIZE = 500;
 
-const fetchAllUserRows = async (table, userId) => {
+const fetchAllUserRows = useCallback(async (table, userId) => {
   const allRows = [];
 
   for (let from = 0; ; from += SUPABASE_PAGE_SIZE) {
@@ -1490,23 +1395,27 @@ const fetchAllUserRows = async (table, userId) => {
   }
 
   return allRows;
-};
+}, []);
 
-const loadAllData = async (retryAttempt = 0) => {
-  if (!session?.user?.id) {
+const signedInUserId = session?.user?.id;
+
+const loadAllData = useCallback(async function loadAllDataForSession(
+  retryAttempt = 0
+) {
+  if (!signedInUserId) {
     console.log("LOAD DATA SKIPPED: No logged-in user");
     return;
   }
 
   console.log(
     "LOAD DATA START - USER:",
-    session.user.id
+    signedInUserId
   );
 
   setLoading(true);
 
   try {
-    const userId = session.user.id;
+    const userId = signedInUserId;
 
     const [
       expenseRows,
@@ -1594,7 +1503,7 @@ const loadAllData = async (retryAttempt = 0) => {
         setTimeout(resolve, waitMs)
       );
 
-      return loadAllData(
+      return loadAllDataForSession(
         retryAttempt + 1
       );
     }
@@ -1609,151 +1518,26 @@ const loadAllData = async (retryAttempt = 0) => {
   } finally {
     setLoading(false);
   }
-};
+}, [fetchAllUserRows, signedInUserId]);
 
 /* =========================
    LOAD DATA AFTER LOGIN
 ========================= */
 
 useEffect(() => {
-  if (!session) {
+  if (!signedInUserId) {
     setLoading(false);
     return;
   }
 
   loadAllData();
-}, [session]);
-
-  /* =========================
-     NORMALIZERS
-  ========================= */
-
-  const normalizeExpense = (x) => ({
-    ...x,
-    id: x.id,
-    amount: Number(x.amount || 0),
-    category: x.category || "Other",
-    date: x.date || getToday(),
-    paymentMode: x.payment_mode || x.paymentMode || "Cash",
-    note: x.note || "",
-    createdAt: x.created_at || x.createdAt || x.created_at,
-  });
-
-  const normalizeIncome = (x) => ({
-    ...x,
-    id: x.id,
-    amount: Number(x.amount || 0),
-    source: x.source || "Other",
-    date: x.date || getToday(),
-    paymentMode:
-      x.payment_mode ||
-      x.paymentMode ||
-      "Bank Transfer",
-    note: x.note || "",
-    createdAt: x.created_at || x.createdAt,
-  });
-
-  const normalizeLoan = (x) => ({
-    ...x,
-    id: x.id,
-
-    /* Historical / reference fields — never used as current EMI inputs */
-    loanType: x.loan_type || x.loanType || "Other Loan",
-    loanName: x.loan_name || x.loanName || "",
-    lender: x.lender || "",
-    amount: Number(x.amount ?? x.principal_amount ?? 0),
-    principalPaidTillDate: Number(
-      x.principal_paid_till_date ?? x.principalPaidTillDate ?? 0
-    ),
-    interestPaidTillDate: Number(
-      x.interest_paid_till_date ?? x.interestPaidTillDate ?? 0
-    ),
-    originalLoanStartDate:
-      x.start_date || x.originalLoanStartDate || x.startDate || "",
-
-    /* Current loan inputs — all EMI calculations use these values */
-    outstanding: Number(
-      x.outstanding ?? x.outstanding_principal ?? 0
-    ),
-    interestRate: Number(
-      x.interest_rate ?? x.interestRate ?? 0
-    ),
-    emi: Number(x.emi ?? x.emi_amount ?? 0),
-    tenure: Number(
-      x.tenure ?? x.remaining_tenure ?? x.tenure_months ?? 0
-    ),
-    nextEmiDate: x.next_emi_date || x.nextEmiDate || "",
-    trackingDate: x.tracking_date || x.trackingDate || "",
-
-    note: x.note || "",
-    status: x.status || "Active",
-    createdAt: x.created_at || x.createdAt,
-  });
-
-  const normalizeEmiPayment = (x) => ({
-    ...x,
-    id: x.id,
-    loanId: x.loan_id || x.loanId,
-    loanName: x.loan_name || x.loanName || "",
-    amount: Number(x.amount || 0),
-
-    principalPaid: Number(
-    x.principal_paid ||
-      x.principalPaid ||
-      0
-      ),
-
-      interestPaid: Number(
-      x.interest_paid ||
-      x.interestPaid ||
-      0
-      ),
-
-      remainingPrincipal: Number(
-      x.remaining_principal ||
-      x.remainingPrincipal ||
-      0
-      ),
-
-    paidDate:
-      x.paid_date ||
-      x.paidDate ||
-      getToday(),
-      emiDueDate:
-  x.emi_due_date ||
-  x.emiDueDate ||
-  "",
-    createdAt: x.created_at || x.createdAt,
-  });
-  
-
-  const normalizePrepaymentPayment = (x) => ({
-    ...x,
-    id: x.id,
-    loanId: x.loan_id || x.loanId,
-    loanName: x.loan_name || x.loanName || "",
-    amount: Number(x.amount || 0),
-    paidDate: x.paid_date || x.paidDate || getToday(),
-    strategy: x.strategy || "tenure",
-    oldOutstanding: Number(x.old_outstanding ?? x.oldOutstanding ?? 0),
-    newOutstanding: Number(x.new_outstanding ?? x.newOutstanding ?? 0),
-    oldEmi: Number(x.old_emi ?? x.oldEmi ?? 0),
-    newEmi: Number(x.new_emi ?? x.newEmi ?? 0),
-    oldTenure: Number(x.old_tenure ?? x.oldTenure ?? 0),
-    newTenure: Number(x.new_tenure ?? x.newTenure ?? 0),
-    oldNextEmiDate: x.old_next_emi_date || x.oldNextEmiDate || "",
-    newNextEmiDate: x.new_next_emi_date || x.newNextEmiDate || "",
-    oldStatus: x.old_status || x.oldStatus || "Active",
-    newStatus: x.new_status || x.newStatus || "Active",
-    note: x.note || "",
-    createdAt: x.created_at || x.createdAt || "",
-  });
+}, [signedInUserId, loadAllData]);
 
   /* =========================
      CALCULATIONS
   ========================= */
 
-  const matchesSelectedPeriod = (dateValue) => {
+  const matchesSelectedPeriod = useCallback((dateValue) => {
     const value = String(dateValue || "").slice(0, 10);
 
     if (!value) return false;
@@ -1771,21 +1555,16 @@ useEffect(() => {
     }
 
     return getMonthKey(value) === month;
-  };
+  }, [periodType, filterYear, customFrom, customTo, month]);
 
   const monthExpenses = useMemo(
     () => expenses.filter((x) => matchesSelectedPeriod(x.date)),
-    [expenses, month, periodType, filterYear, customFrom, customTo]
+    [expenses, matchesSelectedPeriod]
   );
 
   const monthIncomes = useMemo(
     () => incomes.filter((x) => matchesSelectedPeriod(x.date)),
-    [incomes, month, periodType, filterYear, customFrom, customTo]
-  );
-
-  const totalExpenses = expenses.reduce(
-    (s, x) => s + Number(x.amount || 0),
-    0
+    [incomes, matchesSelectedPeriod]
   );
 
   const totalIncome = incomes.reduce(
@@ -1926,9 +1705,6 @@ useEffect(() => {
     0
   );
 
-  const totalBalance =
-    totalIncome - totalExpenses;
-
   const monthSavings =
     monthIncomeTotal - monthExpenseTotal;
 
@@ -2059,47 +1835,6 @@ useEffect(() => {
     [loans]
   );
 
-  const filteredExpenses = useMemo(() => {
-    const q = search.trim().toLowerCase();
-
-    return expenses.filter((x) => {
-      const expenseDate = String(x.date || "").slice(0, 10);
-
-      const matchesSearch =
-        !q ||
-        String(x.category || "").toLowerCase().includes(q) ||
-        String(x.note || "").toLowerCase().includes(q) ||
-        String(x.paymentMode || "").toLowerCase().includes(q) ||
-        expenseDate.toLowerCase().includes(q) ||
-        String(x.amount || "").toLowerCase().includes(q);
-
-      const matchesCategory =
-        filterCategory === "All" ||
-        String(x.category || "") === String(filterCategory);
-
-      const matchesMode =
-        filterMode === "All" ||
-        String(x.paymentMode || "") === String(filterMode);
-
-      return (
-        matchesSearch &&
-        matchesCategory &&
-        matchesMode &&
-        matchesSelectedPeriod(expenseDate)
-      );
-    });
-  }, [
-    expenses,
-    search,
-    filterCategory,
-    filterMode,
-    month,
-    periodType,
-    filterYear,
-    customFrom,
-    customTo,
-  ]);
-
   const filteredIncomes = useMemo(() => {
     const q = search.trim().toLowerCase();
 
@@ -2128,11 +1863,7 @@ useEffect(() => {
     incomes,
     search,
     filterMode,
-    month,
-    periodType,
-    filterYear,
-    customFrom,
-    customTo,
+    matchesSelectedPeriod,
   ]);
 
   const expenseLedgerPeriod = useMemo(() => {
@@ -2204,23 +1935,26 @@ useEffect(() => {
       .map((item) => Number(String(item.date || "").slice(0, 4)))
       .filter((year) => Number.isInteger(year) && year >= 1900 && year <= 2200);
     const currentYear = new Date().getFullYear();
+    const selectedYear =
+      Number(String(expenseLedgerDate || "").slice(0, 4)) || currentYear;
     const firstYear = transactionYears.length
-      ? Math.min(currentYear, ledgerSelectedYear, ...transactionYears)
-      : Math.min(currentYear - 4, ledgerSelectedYear);
+      ? Math.min(currentYear, selectedYear, ...transactionYears)
+      : Math.min(currentYear - 4, selectedYear);
     const lastYear = transactionYears.length
-      ? Math.max(currentYear, ledgerSelectedYear, ...transactionYears)
-      : Math.max(currentYear, ledgerSelectedYear);
+      ? Math.max(currentYear, selectedYear, ...transactionYears)
+      : Math.max(currentYear, selectedYear);
 
     return Array.from(
       { length: lastYear - firstYear + 1 },
       (_, index) => firstYear + index
     );
-  }, [expenses, incomes, ledgerSelectedYear]);
+  }, [expenses, incomes, expenseLedgerDate]);
 
-  const yearlyOverviewRows = useMemo(
-    () =>
-      dashboardMonths.map(([monthValue, monthLabel]) => {
-        const monthKey = `${ledgerSelectedYear}-${monthValue}`;
+  const yearlyOverviewRows = useMemo(() => {
+    const selectedYear = Number(String(expenseLedgerDate || "").slice(0, 4));
+
+    return dashboardMonths.map(([monthValue, monthLabel]) => {
+        const monthKey = `${selectedYear}-${monthValue}`;
         const income = incomes
           .filter((item) => getMonthKey(item.date) === monthKey)
           .reduce((sum, item) => sum + Number(item.amount || 0), 0);
@@ -2235,9 +1969,8 @@ useEffect(() => {
           expense,
           balance: income - expense,
         };
-      }),
-    [expenses, incomes, ledgerSelectedYear]
-  );
+      });
+  }, [expenses, incomes, expenseLedgerDate]);
 
   const yearlyOverviewTotal = useMemo(
     () =>
@@ -2377,7 +2110,7 @@ useEffect(() => {
     setExpenseLedgerView("daily");
     setLedgerComposerOpen(false);
     setLedgerSuggestionOpen(false);
-    setActivePage("expenses");
+    navigateTo("expenses");
   };
 
   const changeLedgerEntryType = (entryType) => {
@@ -2446,23 +2179,37 @@ useEffect(() => {
     );
   };
 
-  const exportExpenseLedgerPdf = () => {
+  const exportExpenseLedgerPdf = async () => {
     if (!ledgerStatementEntries.length) {
       alert(`No entries found for ${ledgerStatementPeriodLabel}.`);
       return;
     }
 
-    const previousTitle = document.title;
     const periodKey =
       expenseLedgerView === "yearly"
         ? String(ledgerSelectedYear)
         : `${ledgerSelectedYear}-${ledgerSelectedMonth}`;
 
-    document.title = `Maza-Hishob-${expenseLedgerView}-Statement-${periodKey}`;
-    window.print();
-    window.setTimeout(() => {
-      document.title = previousTitle;
-    }, 250);
+    try {
+      setSaving(true);
+      await exportLedgerStatementPdf({
+        view: expenseLedgerView,
+        periodLabel: ledgerStatementPeriodLabel,
+        periodKey,
+        entries: ledgerStatementEntries,
+        summary: {
+          carryForward: expenseLedgerData.carryForward,
+          income: expenseLedgerData.credit,
+          expense: expenseLedgerData.debit,
+          balance: expenseLedgerData.balance,
+        },
+      });
+    } catch (error) {
+      console.error("PDF export error:", error);
+      alert(`Unable to create PDF.\n\n${error.message || error}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const saveLedgerQuickEntry = async (event) => {
@@ -2674,19 +2421,6 @@ const last6Months = useMemo(() => {
       })
       .join(", ");
   })();
-
-  const dashboardChartMax = Math.max(
-    1,
-    ...last6Months.flatMap((item) => [
-      Number(item.income || 0),
-      Number(item.expense || 0),
-      Math.max(Number(item.savings || 0), 0),
-    ])
-  );
-
-  const dashboardActiveLoans = loans
-    .filter((loan) => (loan.status || "Active") !== "Closed")
-    .slice(0, 2);
 
   /* =========================
      EXPENSE
@@ -3234,42 +2968,6 @@ ${error.message || error}`);
      EMI
   ========================= */
 
- const addMonth = (date, months = 1) => {
-  const [year, month, day] = String(date)
-    .slice(0, 10)
-    .split("-")
-    .map(Number);
-
-  let newMonth = month + months;
-  let newYear = year;
-
-  while (newMonth > 12) {
-    newMonth -= 12;
-    newYear++;
-  }
-
-  while (newMonth < 1) {
-    newMonth += 12;
-    newYear--;
-  }
-
-  const daysInMonth = new Date(
-    newYear,
-    newMonth,
-    0
-  ).getDate();
-
-  const safeDay = Math.min(
-    day,
-    daysInMonth
-  );
-
-  return `${newYear}-${String(
-    newMonth
-  ).padStart(2, "0")}-${String(
-    safeDay
-  ).padStart(2, "0")}`;
-};
   const markEmiPaid = async (loan) => {
   if (
     (loan.status || "Active") ===
@@ -3287,11 +2985,6 @@ ${error.message || error}`);
     loan.outstanding ??
       0
   );
-
-  const rate =
-    Number(loan.interestRate || 0) /
-    100 /
-    12;
 
   const emi = Number(
     loan.emi || 0
@@ -3353,82 +3046,21 @@ ${error.message || error}`);
       return;
     }
 
-    /* =========================
-       EMI CALCULATION
-    ========================= */
-
-    const interest =
-      currentOutstanding * rate;
-
-    const principal = Math.min(
-      Math.max(
-        emi - interest,
-        0
-      ),
-      currentOutstanding
-    );
-
-    const actualPaymentAmount =
-      Math.min(
-        emi,
-        currentOutstanding +
-          interest
-      );
-
-    const newOutstanding =
-      Math.max(
-        currentOutstanding -
-          principal,
-        0
-      );
-
-    /* =========================
-       ACCURATE REMAINING TENURE
-    ========================= */
-
-    let remainingTenure = 0;
-
-    if (
-      newOutstanding > 0 &&
-      emi > 0
-    ) {
-      if (
-        rate > 0 &&
-        emi >
-          newOutstanding * rate
-      ) {
-        remainingTenure =
-          Math.ceil(
-            -Math.log(
-              1 -
-                (newOutstanding *
-                  rate) /
-                  emi
-            ) /
-              Math.log(
-                1 + rate
-              )
-          );
-      } else if (
-        rate === 0
-      ) {
-        remainingTenure =
-          Math.ceil(
-            newOutstanding /
-              emi
-          );
-      } else {
-        remainingTenure =
-          Number(
-            loan.tenure || 0
-          );
-      }
-    }
-
-    const nextDate =
-      newOutstanding > 0
-        ? addMonth(dueDate)
-        : null;
+    const {
+      interest,
+      principal,
+      actualPaymentAmount,
+      newOutstanding,
+      remainingTenure,
+      nextDate,
+      status,
+    } = calculateEmiSettlement({
+      outstanding: currentOutstanding,
+      annualInterestRate: loan.interestRate,
+      emi,
+      dueDate,
+      fallbackTenure: loan.tenure,
+    });
 
     /* =========================
        EMI PAYMENT
@@ -3469,6 +3101,9 @@ ${error.message || error}`);
       .single();
 
     if (paymentError) {
+      if (paymentError.code === "23505") {
+        throw new Error(`EMI for ${dueDate} is already marked as paid.`);
+      }
       throw paymentError;
     }
 
@@ -3486,10 +3121,7 @@ ${error.message || error}`);
       tenure:
         remainingTenure,
 
-      status:
-        newOutstanding <= 0
-          ? "Closed"
-          : "Active",
+      status,
     };
 
     const {
@@ -3512,6 +3144,20 @@ ${error.message || error}`);
       .single();
 
     if (loanError) {
+      const { error: rollbackError } = await supabase
+        .from("emi_payments")
+        .delete()
+        .eq("id", paymentData.id)
+        .eq("user_id", userId);
+
+      if (rollbackError) {
+        throw new Error(
+          `${loanError.message || loanError} Automatic EMI rollback also failed: ${
+            rollbackError.message || rollbackError
+          }`
+        );
+      }
+
       throw loanError;
     }
 
@@ -3627,21 +3273,12 @@ const deleteEmiPayment = async (id) => {
 
     const rate = Number(loan.interestRate || 0) / 100 / 12;
     const emi = Number(loan.emi || 0);
-
-    let restoredTenure = 0;
-
-    if (restoredOutstanding > 0 && emi > 0) {
-      if (rate > 0 && emi > restoredOutstanding * rate) {
-        restoredTenure = Math.ceil(
-          -Math.log(1 - (restoredOutstanding * rate) / emi) /
-            Math.log(1 + rate)
-        );
-      } else if (rate === 0) {
-        restoredTenure = Math.ceil(restoredOutstanding / emi);
-      } else {
-        restoredTenure = Math.max(Number(loan.tenure || 0) + 1, 1);
-      }
-    }
+    const restoredTenure = calculateRemainingTenure({
+      outstanding: restoredOutstanding,
+      monthlyRate: rate,
+      emi,
+      fallbackTenure: Math.max(Number(loan.tenure || 0) + 1, 1),
+    });
 
     const restoredNextEmiDate =
       payment.emiDueDate || payment.emi_due_date || loan.nextEmiDate || null;
@@ -3677,12 +3314,20 @@ const deleteEmiPayment = async (id) => {
       .eq("user_id", userId);
 
     if (paymentError) {
-      /* Best-effort rollback if payment deletion fails. */
-      await supabase
+      const { error: rollbackError } = await supabase
         .from("loans")
         .update(previousLoanState)
         .eq("id", loan.id)
         .eq("user_id", userId);
+
+      if (rollbackError) {
+        throw new Error(
+          `${paymentError.message || paymentError} Automatic loan rollback also failed: ${
+            rollbackError.message || rollbackError
+          }`
+        );
+      }
+
       throw paymentError;
     }
 
@@ -3809,7 +3454,7 @@ ${error.message || error}`);
         0
       );
 
-    let newEmi = emi;
+    let newEmi;
 
     if (principal <= 0) {
       newEmi = 0;
@@ -3941,11 +3586,20 @@ ${error.message || error}`);
         .single();
 
       if (loanError) {
-        await supabase
+        const { error: rollbackError } = await supabase
           .from("prepayment_payments")
           .delete()
           .eq("id", historyData.id)
           .eq("user_id", userId);
+
+        if (rollbackError) {
+          throw new Error(
+            `${loanError.message || loanError} Automatic prepayment rollback also failed: ${
+              rollbackError.message || rollbackError
+            }`
+          );
+        }
+
         throw loanError;
       }
 
@@ -4062,11 +3716,19 @@ ${error.message || error}`);
           status: payment.newStatus || "Active",
         };
 
-        await supabase
+        const { error: rollbackError } = await supabase
           .from("loans")
           .update(rollbackPayload)
           .eq("id", loan.id)
           .eq("user_id", userId);
+
+        if (rollbackError) {
+          throw new Error(
+            `${deleteError.message || deleteError} Automatic loan rollback also failed: ${
+              rollbackError.message || rollbackError
+            }`
+          );
+        }
 
         throw deleteError;
       }
@@ -4185,7 +3847,7 @@ const getPendingEmis = (loan) => {
       dueDate,
     });
 
-    dueDate = addMonth(dueDate);
+    dueDate = addMonthsClamped(dueDate);
     safetyCounter += 1;
   }
 
@@ -4290,30 +3952,6 @@ const getPendingEmis = (loan) => {
     prepaymentPayments,
   });
 
-  const validateBackupData = (data) => {
-    if (
-      !data ||
-      !Array.isArray(data.expenses) ||
-      !Array.isArray(data.incomes) ||
-      !Array.isArray(data.loans)
-    ) {
-      throw new Error("Invalid Maza Hishob backup file.");
-    }
-
-    if (
-      data.ownerEmail &&
-      session?.user?.email &&
-      String(data.ownerEmail).toLowerCase() !==
-        String(session.user.email).toLowerCase()
-    ) {
-      throw new Error(
-        `This backup belongs to ${data.ownerEmail}. Please sign in with the same Google account to restore it.`
-      );
-    }
-
-    return data;
-  };
-
   const getDriveAccessToken = () => {
     if (!driveConnected) {
       throw new Error(
@@ -4347,7 +3985,7 @@ const getPendingEmis = (loan) => {
     });
 
     if (!response.ok) {
-      let details = "";
+      let details;
 
       try {
         const body = await response.json();
@@ -4568,129 +4206,6 @@ const getPendingEmis = (loan) => {
     }
   };
 
-  const withId = (row, payload) =>
-    row?.id ? { id: row.id, ...payload } : payload;
-
-  const backupToDatabaseRows = (backup, userId) => ({
-    expenses: (backup.expenses || []).map((x) =>
-      withId(x, {
-        user_id: userId,
-        amount: Number(x.amount || 0),
-        category: x.category || "Other",
-        date: x.date || getToday(),
-        payment_mode:
-          x.payment_mode || x.paymentMode || "Cash",
-        note: x.note || "",
-      })
-    ),
-
-    incomes: (backup.incomes || []).map((x) =>
-      withId(x, {
-        user_id: userId,
-        amount: Number(x.amount || 0),
-        source: x.source || "Other",
-        date: x.date || getToday(),
-        payment_mode:
-          x.payment_mode || x.paymentMode || "Bank Transfer",
-        note: x.note || "",
-      })
-    ),
-
-    loans: (backup.loans || []).map((x) =>
-      withId(x, {
-        user_id: userId,
-        loan_type: x.loan_type || x.loanType || "Other Loan",
-        loan_name: x.loan_name || x.loanName || "",
-        lender: x.lender || "",
-        amount: Number(x.amount ?? x.principal_amount ?? 0),
-        principal_paid_till_date: Number(
-          x.principal_paid_till_date ??
-            x.principalPaidTillDate ??
-            0
-        ),
-        interest_paid_till_date: Number(
-          x.interest_paid_till_date ??
-            x.interestPaidTillDate ??
-            0
-        ),
-        start_date:
-          x.start_date ||
-          x.originalLoanStartDate ||
-          x.startDate ||
-          null,
-        outstanding: Number(
-          x.outstanding ?? x.outstanding_principal ?? 0
-        ),
-        interest_rate: Number(
-          x.interest_rate ?? x.interestRate ?? 0
-        ),
-        emi: Number(x.emi ?? x.emi_amount ?? 0),
-        tenure: Number(
-          x.tenure ?? x.remaining_tenure ?? x.tenure_months ?? 0
-        ),
-        next_emi_date:
-          x.next_emi_date || x.nextEmiDate || null,
-        tracking_date:
-          x.tracking_date || x.trackingDate || null,
-        note: x.note || "",
-        status: x.status || "Active",
-      })
-    ),
-
-    emiPayments: (backup.emiPayments || []).map((x) =>
-      withId(x, {
-        user_id: userId,
-        loan_id: x.loan_id || x.loanId,
-        loan_name: x.loan_name || x.loanName || "",
-        amount: Number(x.amount || 0),
-        paid_date: x.paid_date || x.paidDate || getToday(),
-        emi_due_date: x.emi_due_date || x.emiDueDate || null,
-        principal_paid: Number(
-          x.principal_paid ?? x.principalPaid ?? 0
-        ),
-        interest_paid: Number(
-          x.interest_paid ?? x.interestPaid ?? 0
-        ),
-        remaining_principal: Number(
-          x.remaining_principal ?? x.remainingPrincipal ?? 0
-        ),
-      })
-    ),
-
-    prepaymentPayments: (backup.prepaymentPayments || []).map(
-      (x) =>
-        withId(x, {
-          user_id: userId,
-          loan_id: String(x.loan_id || x.loanId || ""),
-          loan_name: x.loan_name || x.loanName || "",
-          amount: Number(x.amount || 0),
-          paid_date: x.paid_date || x.paidDate || getToday(),
-          strategy: x.strategy || "tenure",
-          old_outstanding: Number(
-            x.old_outstanding ?? x.oldOutstanding ?? 0
-          ),
-          new_outstanding: Number(
-            x.new_outstanding ?? x.newOutstanding ?? 0
-          ),
-          old_emi: Number(x.old_emi ?? x.oldEmi ?? 0),
-          new_emi: Number(x.new_emi ?? x.newEmi ?? 0),
-          old_tenure: Number(
-            x.old_tenure ?? x.oldTenure ?? 0
-          ),
-          new_tenure: Number(
-            x.new_tenure ?? x.newTenure ?? 0
-          ),
-          old_next_emi_date:
-            x.old_next_emi_date || x.oldNextEmiDate || null,
-          new_next_emi_date:
-            x.new_next_emi_date || x.newNextEmiDate || null,
-          old_status: x.old_status || x.oldStatus || "Active",
-          new_status: x.new_status || x.newStatus || "Active",
-          note: x.note || "",
-        })
-    ),
-  });
-
   const insertRows = async (table, rows) => {
     if (!rows.length) return;
 
@@ -4713,7 +4228,7 @@ const getPendingEmis = (loan) => {
   };
 
   const writeBackupToSupabase = async (backup, userId) => {
-    const rows = backupToDatabaseRows(backup, userId);
+    const rows = mapBackupToDatabaseRows(backup, userId, getToday());
 
     await insertRows("loans", rows.loans);
     await insertRows("expenses", rows.expenses);
@@ -4748,32 +4263,20 @@ const getPendingEmis = (loan) => {
       throw new Error("Please login again.");
     }
 
-    const backup = validateBackupData(rawBackup);
+    const backup = validateBackupData(rawBackup, session.user.email);
     const userId = session.user.id;
     const safetySnapshot = buildBackupData();
 
-    try {
-      await clearUserDataInSupabase(userId);
-      await writeBackupToSupabase(backup, userId);
-      applyBackupToLocalState(backup);
-    } catch (restoreError) {
-      console.error("Restore failed, attempting rollback:", restoreError);
-
-      try {
-        await clearUserDataInSupabase(userId);
-        await writeBackupToSupabase(safetySnapshot, userId);
-        applyBackupToLocalState(safetySnapshot);
-      } catch (rollbackError) {
-        console.error("Rollback failed:", rollbackError);
-        throw new Error(
-          `Restore failed and automatic rollback also failed. ${
-            restoreError?.message || restoreError
-          }`
-        );
-      }
-
-      throw restoreError;
-    }
+    await restoreBackupWithRollback({
+      backup,
+      safetySnapshot,
+      clear: () => clearUserDataInSupabase(userId),
+      write: (data) => writeBackupToSupabase(data, userId),
+      apply: applyBackupToLocalState,
+      onRestoreError: (error) =>
+        console.error("Restore failed, attempting rollback:", error),
+      onRollbackError: (error) => console.error("Rollback failed:", error),
+    });
   };
 
   const restoreFromGoogleDrive = async (backupId = selectedDriveBackupId) => {
@@ -5251,7 +4754,7 @@ if (!session) {
           type="button"
           className="brand brand-home-btn"
           onClick={() => {
-            setActivePage("home");
+            navigateTo("home");
             setProfileMenuOpen(false);
             window.scrollTo({ top: 0, behavior: "smooth" });
           }}
@@ -5482,7 +4985,7 @@ if (!session) {
                     role="menuitem"
                     onClick={() => {
                       setProfileMenuOpen(false);
-                      setActivePage("settings");
+                      navigateTo("settings");
                     }}
                   >
                     <span>⚙</span>
@@ -5528,7 +5031,7 @@ if (!session) {
                       : ""
                   }`}
                   onClick={() =>
-                    setActivePage(key)
+                    navigateTo(key)
                   }
                 >
                   <span className="side-icon">
@@ -5550,7 +5053,7 @@ if (!session) {
                   : ""
               }`}
               onClick={() =>
-                setActivePage(
+                navigateTo(
                   "settings"
                 )
               }
@@ -5628,7 +5131,7 @@ if (!session) {
                   <button
                     type="button"
                     className="locked-kpi-card income"
-                    onClick={() => setActivePage("income")}
+                    onClick={() => navigateTo("income")}
                   >
                     <span className="locked-kpi-icon">
                       <DashboardIcon type="income" />
@@ -5654,7 +5157,7 @@ if (!session) {
                   <button
                     type="button"
                     className="locked-kpi-card savings"
-                    onClick={() => setActivePage("reports")}
+                    onClick={() => navigateTo("reports")}
                   >
                     <span className="locked-kpi-icon">◆</span>
                     <span>Total Savings</span>
@@ -5747,7 +5250,7 @@ if (!session) {
                   <button
                     type="button"
                     className="locked-kpi-card income"
-                    onClick={() => setActivePage("income")}
+                    onClick={() => navigateTo("income")}
                   >
                     <span className="locked-kpi-icon">
                       <DashboardIcon type="income" />
@@ -5773,7 +5276,7 @@ if (!session) {
                   <button
                     type="button"
                     className="locked-kpi-card savings"
-                    onClick={() => setActivePage("reports")}
+                    onClick={() => navigateTo("reports")}
                   >
                     <span className="locked-kpi-icon">◆</span>
                     <span>Monthly Savings</span>
@@ -5811,17 +5314,17 @@ if (!session) {
                     <strong>Add Loan</strong>
                   </button>
 
-                  <button type="button" onClick={() => setActivePage("loans")}>
+                  <button type="button" onClick={() => navigateTo("loans")}>
                     <span><DashboardIcon type="emi" /></span>
                     <strong>EMI Paid</strong>
                   </button>
 
-                  <button type="button" onClick={() => setActivePage("reports")}>
+                  <button type="button" onClick={() => navigateTo("reports")}>
                     <span><DashboardIcon type="reports" /></span>
                     <strong>Reports</strong>
                   </button>
 
-                  <button type="button" onClick={() => setActivePage("settings")}>
+                  <button type="button" onClick={() => navigateTo("settings")}>
                     <span>☁</span>
                     <strong>Backup</strong>
                   </button>
@@ -5891,7 +5394,7 @@ if (!session) {
                   <button
                     type="button"
                     className="locked-link-button"
-                    onClick={() => setActivePage("expenses")}
+                    onClick={() => navigateTo("expenses")}
                   >
                     View All Expenses →
                   </button>
@@ -5930,7 +5433,7 @@ if (!session) {
                     <button
                       type="button"
                       className="locked-link-button"
-                      onClick={() => setActivePage("loans")}
+                      onClick={() => navigateTo("loans")}
                     >
                       View All EMIs →
                     </button>
@@ -5941,7 +5444,7 @@ if (!session) {
                       <h3>RECENT EXPENSES</h3>
                       <button
                         type="button"
-                        onClick={() => setActivePage("expenses")}
+                        onClick={() => navigateTo("expenses")}
                       >
                         View All →
                       </button>
@@ -6041,7 +5544,7 @@ if (!session) {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setActivePage("loans")}
+                    onClick={() => navigateTo("loans")}
                   >
                     View Loans →
                   </button>
@@ -6733,12 +6236,12 @@ if (!session) {
                   aria-label={
                     expenseLedgerView === "daily"
                       ? "Add ledger entry"
-                      : "Print or save report as PDF"
+                      : "Save or share report as PDF"
                   }
                   title={
                     expenseLedgerView === "daily"
                       ? "Add entry"
-                      : "Print / Save PDF"
+                      : "Save / Share PDF"
                   }
                   onClick={() => {
                     if (expenseLedgerView === "daily") {
@@ -7750,7 +7253,7 @@ if (!session) {
 </section>
 
     {/* =========================
-        TOP 3 EXPENSES
+        TOP 3 EXPENSE CATEGORIES
     ========================= */}
 
     <section className="report-card">
@@ -7759,7 +7262,7 @@ if (!session) {
           <span>TOP SPENDING</span>
 
           <h3>
-            Top 3 Expenses
+            Top 3 Expense Categories
           </h3>
         </div>
       </div>

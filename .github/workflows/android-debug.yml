@@ -41,6 +41,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Run regression tests
+        run: npm test
+
+      - name: Verify Supabase public access
+        run: npm run test:supabase-security
+
       - name: Sync web app to Android
         run: npm run android:sync
 
@@ -53,7 +59,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: maza-hishob-debug-apk
+          name: maza-hishob-v1.0.2-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
