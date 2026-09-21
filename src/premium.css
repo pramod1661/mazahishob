@@ -299,6 +299,72 @@ input[type="month"]::-webkit-calendar-picker-indicator {
   color: var(--mh-premium-gold) !important;
 }
 
+/* Daily period picker uses the exact Monthly / Yearly visual language. */
+.ledger-overview-selectors.daily {
+  width: min(100%, 620px);
+  grid-template-columns: minmax(82px, 0.58fr) minmax(150px, 1.25fr) minmax(104px, 0.78fr);
+  gap: 9px;
+}
+
+.ledger-date-select-control {
+  position: relative;
+  overflow: hidden;
+}
+
+.ledger-date-select-control .ledger-native-date-input {
+  position: absolute !important;
+  inset: 0;
+  z-index: 2;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: inherit !important;
+  opacity: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  cursor: pointer;
+}
+
+.ledger-daily-period-meta {
+  grid-column: 1 / -1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 0 2px;
+}
+
+.ledger-daily-period-meta > span,
+.ledger-daily-period-meta small {
+  color: var(--mh-premium-muted) !important;
+  font-size: 10.5px !important;
+  font-weight: 650;
+}
+
+.ledger-daily-period-meta small {
+  justify-self: center;
+  text-align: center;
+}
+
+.ledger-daily-period-meta > strong {
+  min-width: 0;
+  justify-self: end;
+  color: var(--mh-premium-gold-soft);
+  font-size: 13px;
+  font-weight: 760;
+  white-space: nowrap;
+}
+
+.ledger-daily-period-meta > strong > span {
+  margin-right: 7px;
+  color: var(--mh-premium-muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+
 .ledger-period-dialog-card {
   border-color: var(--mh-premium-line-strong) !important;
   border-radius: 22px !important;
@@ -512,6 +578,26 @@ textarea:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 
+  .ledger-daily-period {
+    grid-template-columns: 38px minmax(0, 1fr) 38px !important;
+    gap: 7px !important;
+  }
+
+  .ledger-overview-selectors.daily {
+    width: 100%;
+    grid-template-columns: minmax(68px, 0.62fr) minmax(0, 1.25fr) minmax(78px, 0.75fr);
+    gap: 6px;
+  }
+
+  .ledger-overview-selectors.daily .ledger-overview-select-control {
+    min-height: 52px !important;
+    padding: 18px 27px 7px 9px !important;
+  }
+
+  .ledger-daily-period-meta {
+    gap: 8px;
+  }
+
   .primary-btn,
   .secondary-btn,
   .danger-btn,
@@ -519,6 +605,36 @@ textarea:disabled {
   .paid-btn,
   .cancel-btn {
     min-height: 48px;
+  }
+}
+
+@media (max-width: 430px) {
+  .ledger-overview-selectors.daily {
+    grid-template-columns: minmax(72px, 0.66fr) minmax(0, 1.34fr);
+  }
+
+  .ledger-overview-selectors.daily .ledger-year-select-control {
+    grid-column: 1 / -1;
+  }
+
+  .ledger-daily-period-meta {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .ledger-daily-period-meta small {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .ledger-daily-period-meta > span {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .ledger-daily-period-meta > strong {
+    grid-column: 2;
+    grid-row: 2;
   }
 }
 

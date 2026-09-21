@@ -2200,7 +2200,7 @@ useEffect(() => {
     updateExpenseLedgerDate({
       year: ledgerPickerYear,
       monthNumber: Number(ledgerPickerMonth),
-      day: 1,
+      day: expenseLedgerView === "monthly" ? 1 : undefined,
     });
     setLedgerPeriodPicker(null);
   };
@@ -5846,7 +5846,7 @@ if (!session) {
 
               {expenseLedgerView === "daily" ? (
                 <>
-                  <div className="ledger-daily-date-card">
+                  <div className="ledger-overview-period ledger-daily-period">
                     <button
                       type="button"
                       className="ledger-period-arrow"
@@ -5856,62 +5856,55 @@ if (!session) {
                       ‹
                     </button>
 
-                    <label className="ledger-day-picker" title="Select date">
-                      <strong>{ledgerDayNumber}</strong>
-                      <input
-                        type="date"
-                        value={expenseLedgerDate}
-                        onChange={(e) =>
-                          setExpenseLedgerDate(e.target.value || getToday())
-                        }
-                        aria-label="Select ledger date"
-                      />
-                    </label>
+                    <div className="ledger-overview-selectors daily">
+                      <label
+                        className="ledger-overview-select-control ledger-date-select-control"
+                        title="Select date"
+                      >
+                        <span>Date</span>
+                        <strong>{String(ledgerDayNumber).padStart(2, "0")}</strong>
+                        <b aria-hidden="true">⌄</b>
+                        <input
+                          className="ledger-native-date-input"
+                          type="date"
+                          value={expenseLedgerDate}
+                          onChange={(e) =>
+                            setExpenseLedgerDate(e.target.value || getToday())
+                          }
+                          aria-label={`Select date, currently ${expenseLedgerDate}`}
+                        />
+                      </label>
 
-                    <div className="ledger-date-selectors">
-                      <div>
-                        <label>
-                          <select
-                            value={ledgerSelectedMonth}
-                            onChange={(e) =>
-                              updateExpenseLedgerDate({
-                                monthNumber: Number(e.target.value),
-                              })
-                            }
-                            aria-label="Select month"
-                          >
-                            {dashboardMonths.map(([value, label]) => (
-                              <option key={value} value={value}>
-                                {label}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
+                      <button
+                        type="button"
+                        className="ledger-overview-select-control ledger-month-select-control"
+                        onClick={() => openLedgerPeriodPicker("month")}
+                        aria-label={`Select month, currently ${ledgerSelectedMonthLabel}`}
+                      >
+                        <span>Month</span>
+                        <strong>{ledgerSelectedMonthLabel}</strong>
+                        <b aria-hidden="true">⌄</b>
+                      </button>
 
-                        <label>
-                          <select
-                            value={ledgerSelectedYear}
-                            onChange={(e) =>
-                              updateExpenseLedgerDate({
-                                year: Number(e.target.value),
-                              })
-                            }
-                            aria-label="Select year"
-                          >
-                            {dashboardYears.map((year) => (
-                              <option key={year} value={year}>
-                                {year}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
+                      <button
+                        type="button"
+                        className="ledger-overview-select-control ledger-year-select-control"
+                        onClick={() => openLedgerPeriodPicker("year")}
+                        aria-label={`Select year, currently ${ledgerSelectedYear}`}
+                      >
+                        <span>Year</span>
+                        <strong>{ledgerSelectedYear}</strong>
+                        <b aria-hidden="true">⌄</b>
+                      </button>
+
+                      <div className="ledger-daily-period-meta">
+                        <span>{ledgerWeekday}</span>
+                        <small>Daily Overview</small>
+                        <strong>
+                          <span>Balance</span>
+                          {privateMoney(expenseLedgerData.balance)}
+                        </strong>
                       </div>
-                      <span>{ledgerWeekday}</span>
-                    </div>
-
-                    <div className="ledger-date-balance">
-                      <span>Balance</span>
-                      <strong>{privateMoney(expenseLedgerData.balance)}</strong>
                     </div>
 
                     <button
