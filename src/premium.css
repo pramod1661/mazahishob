@@ -337,6 +337,21 @@ input[type="month"]::-webkit-calendar-picker-indicator {
     inset 0 1px 0 rgba(255, 255, 255, 0.025) !important;
 }
 
+/* Financial values must stay on one clean line at every card width. */
+.locked-summary-section .locked-kpi-card {
+  container-type: inline-size;
+}
+
+.locked-summary-section .locked-kpi-card > strong {
+  min-width: 0;
+  font-size: clamp(18px, 1.85vw, 28px) !important;
+  font-size: clamp(17px, 11cqw, 28px) !important;
+  letter-spacing: -0.035em;
+  overflow-wrap: normal !important;
+  word-break: normal;
+  white-space: nowrap;
+}
+
 .primary-btn,
 .secondary-btn,
 .danger-btn,
@@ -486,6 +501,10 @@ textarea:disabled {
 
   .ledger-day-picker strong {
     font-size: 29px !important;
+  }
+
+  .locked-summary-section .locked-kpi-card > strong {
+    font-size: clamp(17px, 11cqw, 21px) !important;
   }
 
   .ledger-month-picker-grid,
