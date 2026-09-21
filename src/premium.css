@@ -1,0 +1,515 @@
+/* Maza Hishob premium UI contract — shared by web and the Capacitor app. */
+:root {
+  --mh-font: "Manrope Variable", "Manrope", ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mh-premium-bg: #04131f;
+  --mh-premium-panel: #082234;
+  --mh-premium-panel-raised: #0b2b3e;
+  --mh-premium-line: rgba(232, 185, 91, 0.34);
+  --mh-premium-line-strong: rgba(232, 185, 91, 0.66);
+  --mh-premium-gold: #e8b95b;
+  --mh-premium-gold-soft: #f3d487;
+  --mh-premium-teal: #42cdb7;
+  --mh-premium-text: #f5f8fa;
+  --mh-premium-muted: #a8bbc7;
+  --mh-premium-radius: 14px;
+  --mh-premium-control-height: 48px;
+  font-family: var(--mh-font);
+  font-synthesis: none;
+}
+
+html {
+  color-scheme: dark;
+  font-family: var(--mh-font);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body,
+#root,
+.app-shell,
+.mh-auth-page,
+button,
+input,
+select,
+textarea {
+  font-family: var(--mh-font) !important;
+}
+
+body {
+  color: var(--mh-premium-text);
+  background:
+    radial-gradient(circle at 84% 8%, rgba(66, 205, 183, 0.075), transparent 29rem),
+    radial-gradient(circle at 16% 96%, rgba(232, 185, 91, 0.06), transparent 32rem),
+    var(--mh-premium-bg);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.brand-text h1,
+.page-head h2 {
+  font-family: var(--mh-font) !important;
+  font-weight: 780 !important;
+  letter-spacing: -0.025em !important;
+}
+
+.page-head h2 {
+  font-size: clamp(25px, 3vw, 35px) !important;
+  line-height: 1.14 !important;
+}
+
+.page-head p,
+.settings-card p,
+.muted {
+  color: var(--mh-premium-muted) !important;
+  font-size: 13.5px !important;
+  line-height: 1.62 !important;
+}
+
+/* One visual language for every text, date, month, year and select control. */
+.form-input,
+.field input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.field select,
+.field textarea,
+.form-group input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.form-group select,
+.form-group textarea,
+.filter-group input,
+.filter-group select,
+.month-picker input,
+.locked-month-controls select,
+.ledger-date-selectors select,
+.ledger-quick-field input,
+.ledger-quick-field select,
+.ledger-quick-mode select,
+.ledger-quick-description input,
+.drive-backup-select,
+input[type="date"]:not(.ledger-day-picker input),
+input[type="month"],
+input[type="number"] {
+  width: 100%;
+  min-height: var(--mh-premium-control-height) !important;
+  padding: 0 14px !important;
+  border: 1px solid var(--mh-premium-line) !important;
+  border-radius: var(--mh-premium-radius) !important;
+  outline: 0 !important;
+  color: var(--mh-premium-text) !important;
+  background-color: rgba(5, 24, 37, 0.92) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.035),
+    0 8px 20px rgba(0, 0, 0, 0.08) !important;
+  font-family: var(--mh-font) !important;
+  font-size: 15px !important;
+  font-weight: 650 !important;
+  line-height: 1.2 !important;
+  color-scheme: dark;
+  transition: border-color 160ms ease, box-shadow 160ms ease,
+    background-color 160ms ease, transform 160ms ease;
+}
+
+.field textarea,
+.form-group textarea,
+textarea.form-input {
+  min-height: 104px !important;
+  padding-block: 13px !important;
+  line-height: 1.5 !important;
+  resize: vertical;
+}
+
+select,
+.field select,
+.form-group select,
+.filter-group select,
+.locked-month-controls select,
+.ledger-date-selectors select,
+.drive-backup-select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 42px !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23e8b95b' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 14px center !important;
+  background-size: 16px 16px !important;
+  cursor: pointer;
+}
+
+.form-input:hover,
+.field input:hover,
+.field select:hover,
+.field textarea:hover,
+.form-group input:hover,
+.form-group select:hover,
+.filter-group input:hover,
+.filter-group select:hover,
+.locked-month-controls select:hover,
+.ledger-date-selectors select:hover,
+input[type="date"]:hover,
+input[type="month"]:hover {
+  border-color: var(--mh-premium-line-strong) !important;
+  background-color: rgba(8, 34, 50, 0.98) !important;
+}
+
+.form-input:focus,
+.form-input:focus-visible,
+.field input:focus,
+.field select:focus,
+.field textarea:focus,
+.form-group input:focus,
+.form-group select:focus,
+.filter-group input:focus,
+.filter-group select:focus,
+.locked-month-controls select:focus,
+.ledger-date-selectors select:focus,
+input[type="date"]:focus,
+input[type="month"]:focus {
+  border-color: var(--mh-premium-teal) !important;
+  background-color: rgba(8, 36, 53, 1) !important;
+  box-shadow:
+    0 0 0 3px rgba(66, 205, 183, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045) !important;
+}
+
+.form-input::placeholder,
+.field input::placeholder,
+.field textarea::placeholder,
+.form-group input::placeholder,
+.form-group textarea::placeholder {
+  color: #8297a5 !important;
+  opacity: 1;
+}
+
+.field > label,
+.form-group > label,
+.filter-group > label,
+.locked-month-controls label > span {
+  color: var(--mh-premium-gold-soft) !important;
+  font-size: 11.5px !important;
+  font-weight: 760 !important;
+  letter-spacing: 0.045em !important;
+}
+
+select option {
+  color: var(--mh-premium-text);
+  background: #071d2c;
+  font-family: var(--mh-font);
+}
+
+input[type="date"],
+input[type="month"] {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+input[type="date"]::-webkit-datetime-edit,
+input[type="month"]::-webkit-datetime-edit,
+input[type="date"]::-webkit-datetime-edit-fields-wrapper,
+input[type="month"]::-webkit-datetime-edit-fields-wrapper {
+  color: var(--mh-premium-text);
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="month"]::-webkit-calendar-picker-indicator {
+  width: 19px;
+  height: 19px;
+  padding: 3px;
+  opacity: 0.92;
+  filter: invert(83%) sepia(54%) saturate(602%) hue-rotate(348deg)
+    brightness(98%) contrast(91%);
+  cursor: pointer;
+}
+
+/* The daily date tile is the same system presented as a compact calendar. */
+.ledger-day-picker {
+  width: 76px !important;
+  height: 68px !important;
+  border: 1px solid var(--mh-premium-line-strong) !important;
+  border-radius: var(--mh-premium-radius) !important;
+  background:
+    linear-gradient(155deg, rgba(13, 48, 64, 0.98), rgba(5, 23, 36, 0.98)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+}
+
+.ledger-day-picker strong {
+  color: var(--mh-premium-gold-soft) !important;
+  font-size: 31px !important;
+  font-weight: 780 !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.ledger-day-picker input[type="date"] {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: inherit !important;
+  opacity: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  cursor: pointer;
+}
+
+.ledger-date-selectors > div {
+  grid-template-columns: minmax(132px, 1fr) minmax(92px, 0.7fr) !important;
+  gap: 9px !important;
+}
+
+.ledger-date-selectors select,
+.locked-month-controls select {
+  min-height: var(--mh-premium-control-height) !important;
+}
+
+.ledger-date-selectors > span {
+  color: var(--mh-premium-muted) !important;
+  font-size: 11.5px !important;
+  font-weight: 650;
+}
+
+.ledger-overview-selectors .ledger-overview-select-control {
+  min-height: 54px !important;
+  border: 1px solid var(--mh-premium-line) !important;
+  border-radius: var(--mh-premium-radius) !important;
+  background:
+    linear-gradient(155deg, rgba(13, 48, 64, 0.98), rgba(5, 23, 36, 0.98)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+}
+
+.ledger-overview-select-control > span {
+  color: var(--mh-premium-muted) !important;
+  font-size: 10.5px !important;
+  font-weight: 760 !important;
+}
+
+.ledger-overview-select-control > strong {
+  color: var(--mh-premium-text) !important;
+  font-size: 15px !important;
+  font-weight: 740 !important;
+}
+
+.ledger-overview-select-control > b {
+  color: var(--mh-premium-gold) !important;
+}
+
+.ledger-period-dialog-card {
+  border-color: var(--mh-premium-line-strong) !important;
+  border-radius: 22px !important;
+  background:
+    radial-gradient(circle at 88% 0, rgba(66, 205, 183, 0.14), transparent 38%),
+    linear-gradient(150deg, #0b2c3f, #051827 74%) !important;
+}
+
+.ledger-month-picker-grid button,
+.ledger-year-picker-grid button,
+.ledger-picker-year-stepper button {
+  min-height: 48px !important;
+  border-radius: 13px !important;
+  font-family: var(--mh-font) !important;
+  font-size: 14.5px !important;
+  font-weight: 700 !important;
+}
+
+.ledger-month-picker-grid button.active,
+.ledger-year-picker-grid button.active,
+.ledger-picker-apply {
+  color: #05231f !important;
+  border-color: #65dbc5 !important;
+  background: linear-gradient(145deg, #76e2cc, #3bc4aa) !important;
+}
+
+/* Premium surfaces, button typography and touch targets. */
+.settings-card,
+.report-filters,
+.modal-card,
+.locked-summary-section,
+.ledger-daily-date-card {
+  border-color: rgba(232, 185, 91, 0.22) !important;
+  box-shadow:
+    0 20px 50px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.025) !important;
+}
+
+.primary-btn,
+.secondary-btn,
+.danger-btn,
+.save-expense-btn,
+.paid-btn,
+.cancel-btn,
+.login-submit,
+.mh-google-login,
+.mh-legacy-submit {
+  min-height: 46px;
+  border-radius: 13px !important;
+  font-family: var(--mh-font) !important;
+  font-size: 13.5px !important;
+  font-weight: 760 !important;
+  letter-spacing: 0.005em;
+}
+
+.primary-btn,
+.save-expense-btn,
+.paid-btn,
+.login-submit,
+.mh-google-login,
+.mh-legacy-submit {
+  border-color: rgba(94, 220, 196, 0.52) !important;
+  background: linear-gradient(135deg, #1c9f9a, #177f76) !important;
+  box-shadow: 0 12px 26px rgba(4, 15, 24, 0.3) !important;
+}
+
+.secondary-btn,
+.cancel-btn {
+  border-color: var(--mh-premium-line) !important;
+  color: var(--mh-premium-gold-soft) !important;
+  background: rgba(232, 185, 91, 0.055) !important;
+}
+
+.side-item,
+.ledger-tabs button {
+  font-family: var(--mh-font) !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+}
+
+.ledger-tabs button {
+  min-height: 50px;
+}
+
+.ledger-tabs button.active {
+  color: var(--mh-premium-gold-soft) !important;
+  border-bottom-color: var(--mh-premium-teal) !important;
+}
+
+/* Category identity never depends on row order: icon and color stay stable. */
+.locked-recent-icon.expense-category-food {
+  color: #62d88f !important;
+  background: rgba(46, 159, 93, 0.22) !important;
+}
+
+.locked-recent-icon.expense-category-grocery {
+  color: #a8dd68 !important;
+  background: rgba(119, 155, 58, 0.22) !important;
+}
+
+.locked-recent-icon.expense-category-bills {
+  color: #efbd5b !important;
+  background: rgba(189, 130, 38, 0.22) !important;
+}
+
+.locked-recent-icon.expense-category-travel {
+  color: #72b9ff !important;
+  background: rgba(51, 111, 173, 0.22) !important;
+}
+
+.locked-recent-icon.expense-category-shopping {
+  color: #ee88bd !important;
+  background: rgba(177, 66, 124, 0.2) !important;
+}
+
+.locked-recent-icon.expense-category-medical {
+  color: #ff7883 !important;
+  background: rgba(190, 58, 69, 0.2) !important;
+}
+
+.locked-recent-icon.expense-category-other {
+  color: #aebfca !important;
+  background: rgba(124, 145, 158, 0.18) !important;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid rgba(66, 205, 183, 0.22);
+  outline-offset: 2px;
+}
+
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+@media (max-width: 720px) {
+  :root {
+    --mh-premium-control-height: 50px;
+  }
+
+  body {
+    font-size: 14.5px;
+  }
+
+  .page-head h2 {
+    font-size: clamp(24px, 7vw, 30px) !important;
+  }
+
+  .form-input,
+  .field input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  .field select,
+  .field textarea,
+  .form-group input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  .form-group select,
+  .filter-group input,
+  .filter-group select,
+  .locked-month-controls select,
+  .ledger-date-selectors select,
+  input[type="date"]:not(.ledger-day-picker input),
+  input[type="month"],
+  input[type="number"] {
+    font-size: 16px !important;
+  }
+
+  .locked-month-controls {
+    grid-template-columns: minmax(0, 1fr) minmax(104px, 0.72fr) 46px !important;
+    gap: 8px !important;
+  }
+
+  .ledger-date-selectors > div {
+    grid-template-columns: minmax(0, 1fr) minmax(96px, 0.7fr) !important;
+  }
+
+  .ledger-day-picker {
+    width: 70px !important;
+    height: 66px !important;
+  }
+
+  .ledger-day-picker strong {
+    font-size: 29px !important;
+  }
+
+  .ledger-month-picker-grid,
+  .ledger-year-picker-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .primary-btn,
+  .secondary-btn,
+  .danger-btn,
+  .save-expense-btn,
+  .paid-btn,
+  .cancel-btn {
+    min-height: 48px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

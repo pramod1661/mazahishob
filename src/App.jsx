@@ -3,12 +3,17 @@ import { App as CapacitorApp } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
 import { Browser } from "@capacitor/browser";
 import "./App.css";
+import "./premium.css";
 import { supabase } from "./lib/supabase";
 import {
   addMonthsClamped,
   calculateEmiSettlement,
   calculateRemainingTenure,
 } from "./domain/loanCalculations";
+import {
+  getExpenseCategoryIconType,
+  getExpenseCategoryKey,
+} from "./domain/categoryPresentation";
 import {
   mapBackupToDatabaseRows,
   restoreBackupWithRollback,
@@ -22,6 +27,7 @@ import {
   normalizePrepaymentPayment,
 } from "./domain/normalizers";
 import { exportLedgerStatementPdf } from "./utils/ledgerPdf";
+import { saveLocalBackup } from "./utils/localBackup";
 import mazaHishobLogo from "./assets/maza-hishob-logo.png";
 import dashboardSafe from "./assets/dashboard-safe.svg";
 
@@ -209,6 +215,15 @@ function DashboardIcon({ type }) {
     );
   }
 
+  if (type === "food") {
+    return (
+      <svg {...common}>
+        <path d="M7 3v7M4.8 3v4.2A2.8 2.8 0 0 0 7.6 10H9V3M7 10v11" />
+        <path d="M16.5 3c-2 1.7-3 4-3 7.1 0 1.6 1 2.9 2.5 3.2V21M16.5 3v10.3" />
+      </svg>
+    );
+  }
+
   if (type === "fuel") {
     return (
       <svg {...common}>
@@ -221,6 +236,41 @@ function DashboardIcon({ type }) {
     return (
       <svg {...common}>
         <path d="m13 2-7 11h6l-1 9 7-12h-6z" />
+      </svg>
+    );
+  }
+
+  if (type === "travel") {
+    return (
+      <svg {...common}>
+        <path d="m3 13 8.3-2.2V4.5a1.5 1.5 0 0 1 3 0v5.3l5.7-1.5v2.8l-5.7 3.2V19l2.7 1.5V22l-4.2-.8-4.2.8v-1.5l2.7-1.5v-4.7L3 16.1Z" />
+      </svg>
+    );
+  }
+
+  if (type === "shopping") {
+    return (
+      <svg {...common}>
+        <path d="M5 8h14l-1 13H6L5 8Z" />
+        <path d="M9 9V6a3 3 0 0 1 6 0v3" />
+      </svg>
+    );
+  }
+
+  if (type === "medical") {
+    return (
+      <svg {...common}>
+        <path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6V3Z" />
+      </svg>
+    );
+  }
+
+  if (type === "other") {
+    return (
+      <svg {...common}>
+        <circle cx="5" cy="12" r="1.2" fill="currentColor" stroke="none" />
+        <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
+        <circle cx="19" cy="12" r="1.2" fill="currentColor" stroke="none" />
       </svg>
     );
   }
@@ -360,6 +410,7 @@ function App() {
 
   const [selectedLoan, setSelectedLoan] = useState(null);
   const [backupMessage, setBackupMessage] = useState("");
+  const [localBackupBusy, setLocalBackupBusy] = useState(false);
   const [driveBusy, setDriveBusy] = useState(false);
   const [driveConnected, setDriveConnected] = useState(false);
   const [driveBackups, setDriveBackups] = useState([]);
@@ -4385,21 +4436,29 @@ const getPendingEmis = (loan) => {
     }
   };
 
-  const exportData = () => {
-    const data = buildBackupData();
-    const blob = new Blob(
-      [JSON.stringify(data, null, 2)],
-      { type: "application/json" }
-    );
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
+  const exportData = async () => {
+    setBackupMessage("");
+    setLocalBackupBusy(true);
 
-    a.href = url;
-    a.download = `maza-hishob-backup-${getToday()}.json`;
-    a.click();
+    try {
+      const result = await saveLocalBackup({
+        data: buildBackupData(),
+        dateValue: getToday(),
+      });
 
-    URL.revokeObjectURL(url);
-    setBackupMessage("Backup downloaded successfully.");
+      setBackupMessage(
+        result.destination === "share"
+          ? "Backup is ready. Choose where to save or share it."
+          : `Backup downloaded successfully: ${result.filename}`
+      );
+    } catch (error) {
+      console.error("Local backup export error:", error);
+      setBackupMessage(
+        `Unable to create local backup. ${error?.message || error}`
+      );
+    } finally {
+      setLocalBackupBusy(false);
+    }
   };
 
   const importData = (e) => {
@@ -5454,20 +5513,18 @@ if (!session) {
                       {transactions
                         .filter((item) => item.type === "expense")
                         .slice(0, 5)
-                        .map((item, index) => (
+                        .map((item) => (
                           <div
                             className="locked-recent-row"
                             key={`locked-recent-${item.id}`}
                           >
-                            <span className={`locked-recent-icon r${index}`}>
+                            <span
+                              className={`locked-recent-icon expense-category-${getExpenseCategoryKey(
+                                item.title
+                              )}`}
+                            >
                               <DashboardIcon
-                                type={
-                                  index === 0
-                                    ? "cart"
-                                    : index === 1
-                                    ? "fuel"
-                                    : "bolt"
-                                }
+                                type={getExpenseCategoryIconType(item.title)}
                               />
                             </span>
 
@@ -7586,9 +7643,13 @@ if (!session) {
                 <button
                   className="secondary-btn"
                   onClick={exportData}
-                  disabled={saving}
+                  disabled={saving || localBackupBusy}
                 >
-                  ↓ Download Backup
+                  {localBackupBusy
+                    ? "Preparing Backup..."
+                    : Capacitor.isNativePlatform()
+                    ? "↓ Save / Share Backup"
+                    : "↓ Download Backup"}
                 </button>
               </section>
 
