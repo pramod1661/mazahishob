@@ -1,0 +1,83 @@
+name: Android Release (Unsigned)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/android-release-unsigned.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build-release:
+    name: Build unsigned release bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      VITE_SUPABASE_URL: "https://appyfdveqgxjxvooaube.supabase.co"
+      VITE_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_Ktk2E91a7qLHSElX2wFOyw_4PWtM8QV"
+      VITE_SUPABASE_ANON_KEY: "sb_publishable_Ktk2E91a7qLHSElX2wFOyw_4PWtM8QV"
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run regression tests
+        run: npm test
+
+      - name: Verify Supabase public access
+        run: npm run test:supabase-security
+
+      - name: Sync web app to Android
+        run: npm run android:sync
+
+      - name: Build unsigned release APK and AAB
+        run: |
+          chmod +x android/gradlew
+          cd android
+          ./gradlew :app:assembleRelease :app:bundleRelease --no-daemon
+
+      - name: Align and package release outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_tools_dir="$(find "$ANDROID_SDK_ROOT/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          output_dir="$RUNNER_TEMP/maza-hishob-release"
+          mkdir -p "$output_dir"
+
+          "$build_tools_dir/zipalign" -f -p 4 \
+            android/app/build/outputs/apk/release/app-release-unsigned.apk \
+            "$output_dir/Maza-Hishob-v1.0.5-release-aligned-unsigned.apk"
+
+          cp android/app/build/outputs/bundle/release/app-release.aab \
+            "$output_dir/Maza-Hishob-v1.0.5-release-unsigned.aab"
+          cp "$build_tools_dir/lib/apksigner.jar" "$output_dir/apksigner.jar"
+
+          sha256sum "$output_dir"/* > "$output_dir/SHA256SUMS.txt"
+
+      - name: Upload unsigned release outputs
+        uses: actions/upload-artifact@v7
+        with:
+          name: maza-hishob-v1.0.5-release-unsigned
+          path: ${{ runner.temp }}/maza-hishob-release/
+          if-no-files-found: error
+          retention-days: 1
