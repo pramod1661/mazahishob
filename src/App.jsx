@@ -4783,7 +4783,7 @@ if (!session) {
           )}
 
           <div className="mh-auth-footer">
-            <strong>© 2026 Maza Hishob. All Rights Reserved.</strong>
+            <strong>© {new Date().getFullYear()} Maza Hishob. All Rights Reserved.</strong>
             <span>Money Tracker & Personal Finance Manager</span>
           </div>
         </section>
